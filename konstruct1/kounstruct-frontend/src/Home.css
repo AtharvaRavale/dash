@@ -1,0 +1,26 @@
+.tab {
+  border-top-left-radius: 15px;
+  border-top-right-radius: 15px;
+  border-bottom-left-radius: 0px;
+  border-bottom-right-radius: 0px;
+}
+
+.tab-active {
+  border-top-left-radius: 30px;
+  border-top-right-radius: 30px;
+  border-bottom-left-radius: 0px;
+  border-bottom-right-radius: 0px;
+  background-color: white;
+  position: relative;
+  top: 2px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.tab-inactive {
+  border-radius: 20px;
+  background-color: #e5e7eb; /* Inactive color */
+}
+
+.tab:hover {
+  background-color: #d1d5db;
+}

@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  position: relative;
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 0.4s cubic-bezier(.38,1.15,.7,1.01);
+}
+
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
+    monospace;
+}
+
+.organization-list {
+  @apply grid grid-cols-1 sm:!grid-cols-2 md:!grid-cols-3 lg:!grid-cols-4;
+}
+
+.project-grid {
+  @apply grid grid-cols-1 sm:!grid-cols-2 md:!grid-cols-4 lg:!grid-cols-5;
+}
+
+.setup-container {
+  @apply h-[calc(100vh_-_180px)];
+}
+
+.user-setup-container {
+  @apply bg-white rounded-md p-4 h-screen w-full flex flex-col gap-y-6;
+}
+
+.user-setup-form {
+  @apply flex mx-auto gap-x-4 w-full items-center justify-center;
+}
+
+.user-setup {
+  @apply flex mx-auto gap-x-4 w-full items-center justify-center;
+}
+
+.btn {
+  @apply disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+/* body{
+  background-color: #e5e7eb;
+} */
+
