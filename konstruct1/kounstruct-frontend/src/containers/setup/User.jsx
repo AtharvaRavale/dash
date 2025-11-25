@@ -1027,7 +1027,174 @@ const handleManagerFinalSubmit = async () => {
   setIsSubmitting(true);
 
   try {
+        // 🔹 Just gather all unique role strings exactly as in ROLE_OPTIONS
+        // 1) Collect unique roles for the user in the exact format backend expects
+    const rolesSet = new Set();
+
+    mappingBucket.forEach((mapping) => {
+      (mapping.roles || []).forEach((r) => {
+        if (!r) return;
+        let v = String(r).trim();
+
+        // Normalise initializer spelling to backend's choice
+        if (v.toLowerCase() === "initializer" || v.toLowerCase() === "intializer") {
+          v = "Intializer"; // 👈 EXACT value backend uses
+        }
+
+        // SUPERVISOR, CHECKER, MAKER, SECURITY_GUARD already match backend choices
+        rolesSet.add(v);
+      });
+    });
+
+    const rolesForUser = Array.from(rolesSet);
+
+    // Backend expects: [{ role: "Intializer" }, { role: "MAKER" }, ...]
+    const rolesPayload = rolesForUser.map((role) => ({ role }));
+
+    console.log("rolesForUser (manager flow):", rolesForUser);
+    console.log("rolesPayload (manager flow):", rolesPayload);
+
+    // 🔹 Build base access row from mappingBucket
+    // This is what actually creates the initial access record in DB.
+    // For Intializer / Security Guard -> project-level all_cat = true
+    let baseAccess = {
+      project_id: null,
+      building_id: null,
+      zone_id: null,
+      flat_id: null,
+      active: true,
+      all_cat: true,
+      category: null,
+      CategoryLevel1: null,
+      CategoryLevel2: null,
+      CategoryLevel3: null,
+      CategoryLevel4: null,
+      CategoryLevel5: null,
+      CategoryLevel6: null,
+      purpose_id: null,
+      phase_id: null,
+      stage_ids: [],
+    };
+
+    if (mappingBucket.length > 0) {
+      // Prefer a mapping that has Intializer / Security Guard role
+      const initializerOrGuardMapping =
+        mappingBucket.find((m) =>
+          (m.roles || []).some((r) => {
+            const rl = String(r).toLowerCase();
+            return (
+              rl === "intializer" ||
+              rl === "initializer" ||
+              rl === "security_guard"
+            );
+          })
+        ) || mappingBucket[0];
+
+      if (initializerOrGuardMapping) {
+        const m = initializerOrGuardMapping;
+
+        baseAccess.project_id = m.project_id
+          ? parseInt(m.project_id, 10)
+          : null;
+        baseAccess.building_id = m.building_id
+          ? parseInt(m.building_id, 10)
+          : null;
+        baseAccess.zone_id = m.zone_id ? parseInt(m.zone_id, 10) : null;
+
+        const hasInitOrGuard = (m.roles || []).some((r) => {
+          const rl = String(r).toLowerCase();
+          return (
+            rl === "intializer" ||
+            rl === "initializer" ||
+            rl === "security_guard"
+          );
+        });
+
+        // For pure Initializer/Security Guard, keep all_cat = true and categories null
+        // For Maker/Checker/Supervisor, copy category filters from first mapping
+        if (!hasInitOrGuard && !m.all_cat) {
+          baseAccess.all_cat = false;
+          baseAccess.category = m.category ? parseInt(m.category, 10) : null;
+          baseAccess.CategoryLevel1 = m.CategoryLevel1
+            ? parseInt(m.CategoryLevel1, 10)
+            : null;
+          baseAccess.CategoryLevel2 = m.CategoryLevel2
+            ? parseInt(m.CategoryLevel2, 10)
+            : null;
+          baseAccess.CategoryLevel3 = m.CategoryLevel3
+            ? parseInt(m.CategoryLevel3, 10)
+            : null;
+          baseAccess.CategoryLevel4 = m.CategoryLevel4
+            ? parseInt(m.CategoryLevel4, 10)
+            : null;
+          baseAccess.CategoryLevel5 = m.CategoryLevel5
+            ? parseInt(m.CategoryLevel5, 10)
+            : null;
+          baseAccess.CategoryLevel6 = m.CategoryLevel6
+            ? parseInt(m.CategoryLevel6, 10)
+            : null;
+        }
+      }
+    }
+
+    // const rolesSet = new Set();
+
+    // mappingBucket.forEach((mapping) => {
+    //   (mapping.roles || []).forEach((r) => {
+    //     const rl = r.toLowerCase();
+    //     let apiRole;
+
+    //     if (rl === "intializer" || rl === "initializer") {
+    //       apiRole = "INITIALIZER";
+    //     } else if (rl === "security_guard") {
+    //       apiRole = "SECURITY_GUARD";
+    //     } else {
+    //       // Maker / Checker / Supervisor (etc) → uppercase
+    //       apiRole = r.toUpperCase();
+    //     }
+
+    //     rolesSet.add(apiRole);
+    //   });
+    // });
+
+    // const rolesForUser = Array.from(rolesSet);
     // 1) Pehle USER create karo (purane createUserAccessRole se, bina mapping ke)
+    // const userCreatePayload = {
+    //   user: {
+    //     username: basicUserDetails.username,
+    //     first_name: basicUserDetails.first_name,
+    //     last_name: basicUserDetails.last_name,
+    //     email: basicUserDetails.email,
+    //     phone_number: basicUserDetails.mobile || "",
+    //     password: basicUserDetails.password,
+    //     org: org ? parseInt(org, 10) : null,
+    //     company: null,
+    //     entity: null,
+    //     is_manager: false,   // manager ek normal user bana raha hai
+    //     is_client: false,
+    //     has_access: true,
+    //   },
+    //   access: {
+    //     project_id: null,
+    //     building_id: null,
+    //     zone_id: null,
+    //     flat_id: null,
+    //     active: true,
+    //     all_cat: true,
+    //     category: null,
+    //     CategoryLevel1: null,
+    //     CategoryLevel2: null,
+    //     CategoryLevel3: null,
+    //     CategoryLevel4: null,
+    //     CategoryLevel5: null,
+    //     CategoryLevel6: null,
+    //     purpose_id: null,
+    //     phase_id: null,
+    //     stage_ids: [],
+    //   },
+    //  roles: rolesPayload,
+    // };
+    // 1) Pehle USER create karo (createUserAccessRole se) – with baseAccess
     const userCreatePayload = {
       user: {
         username: basicUserDetails.username,
@@ -1043,25 +1210,8 @@ const handleManagerFinalSubmit = async () => {
         is_client: false,
         has_access: true,
       },
-      access: {
-        project_id: null,
-        building_id: null,
-        zone_id: null,
-        flat_id: null,
-        active: true,
-        all_cat: true,
-        category: null,
-        CategoryLevel1: null,
-        CategoryLevel2: null,
-        CategoryLevel3: null,
-        CategoryLevel4: null,
-        CategoryLevel5: null,
-        CategoryLevel6: null,
-        purpose_id: null,
-        phase_id: null,
-        stage_ids: [],
-      },
-      roles: [],
+      access: baseAccess,   // 🔴 THIS IS THE IMPORTANT CHANGE
+      roles: rolesPayload,
     };
 
     console.log("Create user payload (manager flow):", userCreatePayload);
@@ -1086,70 +1236,105 @@ const handleManagerFinalSubmit = async () => {
 
     // 2) mappingBucket se stage-tree payload banao
 
-    const projectsMap = {}; // { [projectId]: { [purposeId]: { [phaseId]: [ {stage_id, roles} ] } } }
+    // 👉 Stage-tree is only for Maker/Checker/Supervisor type roles
+const projectsMap = {}; // { [projectId]: { [purposeId]: { [phaseId]: [ {stage_id, roles} ] } } }
+let hasInitializerOnlyMappings = false;
 
-    mappingBucket.forEach((mapping) => {
-      const projectId = mapping.project_id ? parseInt(mapping.project_id, 10) : null;
-      const purposeId = mapping.purpose_id ? parseInt(mapping.purpose_id, 10) : null;
-      const phaseId = mapping.phase_id ? parseInt(mapping.phase_id, 10) : null;
-      const stageIds = (mapping.stage_ids || []).map((id) => parseInt(id, 10));
+mappingBucket.forEach((mapping) => {
+  const projectId = mapping.project_id ? parseInt(mapping.project_id, 10) : null;
+  const purposeId = mapping.purpose_id ? parseInt(mapping.purpose_id, 10) : null;
+  const phaseId = mapping.phase_id ? parseInt(mapping.phase_id, 10) : null;
+  const stageIds = (mapping.stage_ids || []).map((id) => parseInt(id, 10));
 
-      // Intializer ko yahan se hatao (ye API initializer map nahi karti)
-      const roles = (mapping.roles || []).filter(
-        (r) =>
-          r.toLowerCase() !== "intializer" &&
-          r.toLowerCase() !== "initializer"
+  const rawRoles = mapping.roles || [];
+
+  // roles that actually go into stage-tree (skip Initializer / Security Guard)
+  const roles = rawRoles.filter((r) => {
+    const rl = r.toLowerCase();
+    return (
+      rl !== "intializer" && rl !== "initializer" &&
+      rl !== "security_guard"
+    );
+  });
+
+  // 👇 detect mappings that are ONLY Initializer / Security Guard (project-level only)
+  const isInitializerOnly =
+    rawRoles.length > 0 &&
+    rawRoles.every((r) => {
+      const rl = r.toLowerCase();
+      return (
+        rl === "intializer" ||
+        rl === "initializer" ||
+        rl === "security_guard"
       );
-
-      // Agar sirf initializer tha / incomplete data hai -> skip
-      if (!projectId || !purposeId || !phaseId || stageIds.length === 0 || roles.length === 0) {
-        return;
-      }
-
-      if (!projectsMap[projectId]) {
-        projectsMap[projectId] = {};
-      }
-      if (!projectsMap[projectId][purposeId]) {
-        projectsMap[projectId][purposeId] = {};
-      }
-      if (!projectsMap[projectId][purposeId][phaseId]) {
-        projectsMap[projectId][purposeId][phaseId] = [];
-      }
-
-      // ek mapping row ke saare stage_ids ko alag-alag stage blocks me daal do
-      stageIds.forEach((stageId) => {
-        projectsMap[projectId][purposeId][phaseId].push({
-          stage_id: stageId,
-          roles, // ["MAKER", "CHECKER", ...]
-        });
-      });
     });
 
-    const projectsArray = Object.entries(projectsMap).map(
-      ([projectId, purposesObj]) => ({
-        project_id: Number(projectId),
-        mappings: Object.entries(purposesObj).map(
-          ([purposeId, phasesObj]) => ({
-            purpose_id: Number(purposeId),
-            phases: Object.entries(phasesObj).map(
-              ([phaseId, stagesArr]) => ({
-                phase_id: Number(phaseId),
-                stages: stagesArr,
-              })
-            ),
+  if (isInitializerOnly) {
+    hasInitializerOnlyMappings = true;
+    // NOTE: we don't push these into projectsMap,
+    // because they don't need stage-level mapping.
+    return;
+  }
+
+  // For Maker/Checker/Supervisor, we still require purpose/phase/stage
+  if (!projectId || !purposeId || !phaseId || stageIds.length === 0 || roles.length === 0) {
+    return;
+  }
+
+  if (!projectsMap[projectId]) {
+    projectsMap[projectId] = {};
+  }
+  if (!projectsMap[projectId][purposeId]) {
+    projectsMap[projectId][purposeId] = {};
+  }
+  if (!projectsMap[projectId][purposeId][phaseId]) {
+    projectsMap[projectId][purposeId][phaseId] = [];
+  }
+
+  stageIds.forEach((stageId) => {
+    projectsMap[projectId][purposeId][phaseId].push({
+      stage_id: stageId,
+      roles,
+    });
+  });
+});
+
+const projectsArray = Object.entries(projectsMap).map(
+  ([projectId, purposesObj]) => ({
+    project_id: Number(projectId),
+    mappings: Object.entries(purposesObj).map(
+      ([purposeId, phasesObj]) => ({
+        purpose_id: Number(purposeId),
+        phases: Object.entries(phasesObj).map(
+          ([phaseId, stagesArr]) => ({
+            phase_id: Number(phaseId),
+            stages: stagesArr,
           })
         ),
       })
-    );
+    ),
+  })
+);
 
-    if (!projectsArray.length) {
-      showToast(
-        "User created, but no valid stage mappings found (only Initializer / incomplete entries).",
-        "error"
-      );
-      setIsSubmitting(false);
-      return;
-    }
+// 🔥 If there is NO stage mapping, but we DO have Initializer-only mappings,
+// then just treat it as success and SKIP the /access-stage-tree/ call.
+if (!projectsArray.length) {
+  if (hasInitializerOnlyMappings) {
+    showToast(
+      "User created successfully with project-level Initializer access.",
+      "success"
+    );
+    resetAllForms();
+  } else {
+    showToast(
+      "User created, but no valid stage mappings found. Please check mappings.",
+      "error"
+    );
+  }
+  setIsSubmitting(false);
+  return;
+}
+
 
     const stageTreePayload = {
       user_id: newUserId,

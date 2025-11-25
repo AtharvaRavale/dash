@@ -131,9 +131,15 @@ const useDebounce = (callback, delay) => {
 };
 
 
-const CHECKLIST_API_URL = '/sexy-getchchklist/';
-const VERIFY_ITEM_API = "/char-chavani-ghode-par/";
-const MAKER_DONE_API  = "/sexy-maker/";
+//const CHECKLIST_API_URL = '/sexy-getchchklist/';
+const CHECKLIST_API_URL = '/transfer-getchchklist/';
+
+//const VERIFY_ITEM_API = "/char-chavani-ghode-par/";
+const VERIFY_ITEM_API = "/Decsion-makeing-forSuer-Inspector/";
+
+//const MAKER_DONE_API  = "/sexy-maker/";
+const MAKER_DONE_API  = "/done-maker/";
+
 
 
 
@@ -4705,7 +4711,7 @@ const loadWorkPage = async ({ offset = 0, limit } = {}) => {
   // ❗ INITIALIZER ke liye yeh endpoint allowed hi nahi hai
   const apiRole = resolveApiRoleId(); // maker / checker / supervisor / initializer
   if (apiRole === "initializer") {
-    console.warn("loadWorkPage called for INITIALIZER – skipping sexy-getchchklist");
+    console.warn("loadWorkPage called for INITIALIZER – skipping transfer-getchchklist");
     return;
   }
 
@@ -4721,7 +4727,9 @@ const loadWorkPage = async ({ offset = 0, limit } = {}) => {
 
   console.log("🔭 loadWorkPage → params:", params);
 
-  const res = await checklistInstance.get("/sexy-getchchklist/", {
+  //const res = await checklistInstance.get("/sexy-getchchklist/", {
+  const res = await checklistInstance.get("/transfer-getchchklist/", {
+
     params,
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -4879,7 +4887,9 @@ const loadFirstPage = async () => {
       offset: "0",
     }).toString();
 
-    const url = `https://konstruct.world/checklists/sexy-getchchklist/?${params}`;
+    //const url = `https://konstruct.world/checklists/sexy-getchchklist/?${params}`;
+    const url = `https://konstruct.world/checklists/transfer-getchchklist/?${params}`;
+
     const res = await checklistInstance.get(url, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 40000

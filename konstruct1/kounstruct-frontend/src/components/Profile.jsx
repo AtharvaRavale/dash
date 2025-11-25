@@ -2726,7 +2726,7 @@ function Profile({ onClose }) {
         const { data } = await getUserAccessForProject(uid, pid);
         const list = Array.isArray(data) ? data : [];
 
-        const WHITELIST = ["MAKER", "CHECKER", "SUPERVISOR"];
+        const WHITELIST = ["MAKER", "CHECKER", "SUPERVISOR","INTIALIZER"];
         const rolesSet = new Set();
 
         list.forEach((access) => {
@@ -2837,7 +2837,9 @@ function Profile({ onClose }) {
     "ACCESSES",
     "ROLE",
     "persist:root"  ,
-    "FLOW_ROLE"    // <- redux-persist cache
+    "FLOW_ROLE" ,
+    "PROJECT_ID",
+    "ACTIVE_PROJECT_ID",   // <- redux-persist cache
   ];
   keys.forEach(k => localStorage.removeItem(k));
 
