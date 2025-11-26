@@ -1315,3 +1315,9 @@ export const getUserAccessForProject = (userId, projectId) =>
       "Content-Type": "application/json",
     },
   });
+
+
+
+  export const getStagesByPhase = (phaseId) => {
+  return projectInstance.get(`/stages/by_phase/${phaseId}/`);
+};

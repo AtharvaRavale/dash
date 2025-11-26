@@ -1679,7 +1679,7 @@ import axios from "axios";
 import SiteBarHome from "./SiteBarHome";
 import { useTheme } from "../ThemeContext";
 import html2pdf from "html2pdf.js";
-import { projectInstance } from "../api/axiosInstance";
+import { projectInstance,NEWchecklistInstance } from "../api/axiosInstance";
 
 
 function FlatMatrixTable() {
@@ -1722,13 +1722,19 @@ const [sidebarOpen, setSidebarOpen] = React.useState(true); // default true for 
   const location = useLocation();
   const navigate = useNavigate();
   const projectIdFromState = location.state?.projectId || id;
-
+const resolvedProjectId = useMemo(
+  () => resolveProjectId(projectIdFromState),
+  [projectIdFromState]
+);
   const pdfRef = useRef(null);
   const searchRef = useRef(null);
 
   // ADD after other useState declarations:
   const [filterOverlay, setFilterOverlay] = useState(false);
   const [activeFilterSection, setActiveFilterSection] = useState(null);
+// const [flatChecklistMap, setFlatChecklistMap] = useState({}); // { [flatId]: true }
+const [flatChecklistMap, setFlatChecklistMap] = useState({}); 
+
 
   // Enhanced Theme Configuration
   const ORANGE = "#ffbe63";
@@ -1767,6 +1773,109 @@ useEffect(() => {
 
   fetchTowerName();
 }, [towerId]);
+// ---- Fetch flats that have checklist started for current role ----
+// ---- Fetch flats that have checklist started for current role ----
+useEffect(() => {
+  async function loadChecklistFlats() {
+    if (!resolvedProjectId) {
+      console.warn("No project id found for checklist API");
+      return;
+    }
+
+    const role = getWorkflowRole();
+    if (!role) {
+      console.warn("No role found (FLOW_ROLE / ROLE) for checklist API");
+      return;
+    }
+
+    try {
+      const res = await NEWchecklistInstance.get("/started-per-flat/", {
+        params: {
+          project_id: resolvedProjectId,
+          role,
+          building_id: id, // <-- 147 in tumhare URL jaisa
+        },
+      });
+
+      // ⚠️ Important: API = { project_id, role, ..., results: [...] }
+      const payload = res.data || {};
+      const results = Array.isArray(payload.results) ? payload.results : [];
+
+      const map = {};
+
+      results.forEach((row) => {
+        if (!row.started_for_role) return;
+
+        const flatId = row.flat_id || row.unit_id || row.flat;
+        if (!flatId) return;
+
+        const state = deriveChecklistState(row); // "started" | "in_progress" | "completed" | null
+        if (!state) return;
+
+        map[flatId] = {
+          state,
+          stageId: row.stage_id,
+          raw: row,
+        };
+      });
+
+      console.log("Checklist map 👉", map);
+      setFlatChecklistMap(map);
+    } catch (err) {
+      console.error("Failed to load checklist flats", err);
+    }
+  }
+
+  loadChecklistFlats();
+}, [resolvedProjectId, id]);
+
+// useEffect(() => {
+//   async function loadChecklistFlats() {
+//     if (!resolvedProjectId) {
+//       console.warn("No project id found for checklist API");
+//       return;
+//     }
+
+//     const role = getWorkflowRole();
+//     if (!role) {
+//       console.warn("No role found (FLOW_ROLE / ROLE) for checklist API");
+//       return;
+//     }
+
+//     try {
+//       const res = await NEWchecklistInstance.get(
+//         // 👉 apni exact URL daalna, yahan assume:
+//         "/started-per-flat/",
+//         {
+//           params: {
+//             project_id: resolvedProjectId,
+//             role,
+//             // optional: agar backend pe building/tower filter hai
+//             building_id: id,
+//           },
+//         }
+//       );
+
+//       const data = Array.isArray(res.data) ? res.data : [];
+
+//       // Expecting items like: { flat_id: 123, ... }
+//       const map = {};
+//       data.forEach((row) => {
+//         const flatId = row.flat_id || row.unit_id || row.flat;
+//         if (flatId) {
+//           map[flatId] = true;
+//         }
+//       });
+
+//       setFlatChecklistMap(map);
+//     } catch (err) {
+//       console.error("Failed to load checklist flats", err);
+//       // yahan notification bhi chaho to addNotification use kar sakte ho
+//     }
+//   }
+
+//   loadChecklistFlats();
+// }, [resolvedProjectId, id]);
 
 
 console.log("FlatMatrixTable: towerId is", towerId);
@@ -1831,6 +1940,70 @@ function formatLevelDisplayName(name) {
 
   return name;
 }
+// ---- helpers for project & role ----
+function resolveProjectId(projectIdFromState) {
+  // 1) from route state (preferred)
+  if (projectIdFromState) return Number(projectIdFromState);
+
+  // 2) from URL ?project_id=
+  try {
+    const qs = new URLSearchParams(window.location.search);
+    const q = qs.get("project_id");
+    if (q) return Number(q);
+  } catch {}
+
+  // 3) from localStorage ACTIVE_PROJECT_ID / PROJECT_ID
+  const fromLs =
+    localStorage.getItem("ACTIVE_PROJECT_ID") ||
+    localStorage.getItem("PROJECT_ID");
+  if (fromLs) return Number(fromLs);
+
+  // 4) fallback: first ACCESSES project
+  try {
+    const accessStr = localStorage.getItem("ACCESSES");
+    if (accessStr && accessStr !== "undefined") {
+      const accesses = JSON.parse(accessStr);
+      if (Array.isArray(accesses) && accesses[0]?.project_id) {
+        return Number(accesses[0].project_id);
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+function getWorkflowRole() {
+  // FLOW_ROLE = Maker / Checker / Supervisor / Initializer
+  const flow = localStorage.getItem("FLOW_ROLE");
+  if (flow) return flow.toUpperCase();
+
+  const display = localStorage.getItem("ROLE");
+  return display ? String(display).toUpperCase() : "";
+}
+function deriveChecklistState(row) {
+  const total = row.total_items || 0;
+  const started = row.started_items || 0;
+  const hasChecklist =
+    Array.isArray(row.checklists) && row.checklists.length > 0;
+  const anyCompleted =
+    hasChecklist &&
+    row.checklists.some((c) => String(c.status).toLowerCase() === "completed");
+
+  if (!hasChecklist) return null;
+
+  // 1) ✅ Completed: koi bhi checklist completed hai
+  if (anyCompleted) return "completed";
+
+  // 2) ✅ In progress: kuch items start ho chuke hain
+  if (started > 0 && started < total) return "in_progress";
+
+  // 3) ✅ Started: checklist assign hai, par items abhi tak start nahi,
+  // ya total = started (but not completed as per above)
+  if (started > 0 || total > 0) return "started";
+
+  return null;
+}
+
 
 function getPrettyUnitNumber(unitName) {
   if (!unitName) return "";
@@ -2185,60 +2358,159 @@ useEffect(() => {
   }, [filteredAndSearchedLevels, currentPage, floorsPerPage]);
 
   // Enhanced flat status configuration
-  const getFlatStatusConfig = (flat) => {
-    if (!flat)
-      return {
-        bg: "transparent",
-        border: "transparent",
-        text: "transparent",
-        icon: "○",
-      };
-
-    const configs = {
-      occupied: {
-        bg: `${themeConfig.accent}25`,
-        border: themeConfig.accent,
-        text: themeConfig.textPrimary,
-        icon: "●",
-        label: "Occupied",
-        pulse: false,
-      },
-      available: {
-        bg: `${themeConfig.success}20`,
-        border: themeConfig.success,
-        text: themeConfig.success,
-        icon: "○",
-        label: "Available",
-        pulse: true,
-      },
-      maintenance: {
-        bg: `${themeConfig.warning}20`,
-        border: themeConfig.warning,
-        text: themeConfig.warning,
-        icon: "⚠",
-        label: "Maintenance",
-        pulse: true,
-      },
-      reserved: {
-        bg: `${themeConfig.error}20`,
-        border: themeConfig.error,
-        text: themeConfig.error,
-        icon: "◐",
-        label: "Reserved",
-        pulse: false,
-      },
-      default: {
-        bg: `${themeConfig.textSecondary}10`,
-        border: themeConfig.textSecondary,
-        text: themeConfig.textSecondary,
-        icon: "□",
-        label: "Unknown",
-        pulse: false,
-      },
+  const getFlatStatusConfig = (flat, checklistInfo) => {
+  if (!flat)
+    return {
+      bg: "transparent",
+      border: "transparent",
+      text: "transparent",
+      icon: "○",
     };
 
-    return configs[flat.status?.toLowerCase()] || configs.default;
+  const configs = {
+    occupied: {
+      bg: `${themeConfig.accent}25`,
+      border: themeConfig.accent,
+      text: themeConfig.textPrimary,
+      icon: "●",
+      label: "Occupied",
+      pulse: false,
+    },
+    available: {
+      bg: `${themeConfig.success}20`,
+      border: themeConfig.success,
+      text: themeConfig.success,
+      icon: "○",
+      label: "Available",
+      pulse: true,
+    },
+    maintenance: {
+      bg: `${themeConfig.warning}20`,
+      border: themeConfig.warning,
+      text: themeConfig.warning,
+      icon: "⚠",
+      label: "Maintenance",
+      pulse: true,
+    },
+    reserved: {
+      bg: `${themeConfig.error}20`,
+      border: themeConfig.error,
+      text: themeConfig.error,
+      icon: "◐",
+      label: "Reserved",
+      pulse: false,
+    },
+    default: {
+      bg: `${themeConfig.textSecondary}10`,
+      border: themeConfig.textSecondary,
+      text: themeConfig.textSecondary,
+      icon: "□",
+      label: "Unknown",
+      pulse: false,
+    },
   };
+
+  const base = configs[flat.status?.toLowerCase()] || configs.default;
+
+  // 💡 Agar is flat ke liye checklist info hai, to 3-stage colour use karo
+  if (checklistInfo && checklistInfo.state) {
+    const st = checklistInfo.state; // "started" | "in_progress" | "completed"
+
+    if (st === "started") {
+      return {
+        ...base,
+        bg: `${themeConfig.info}18`,    // light blue
+        border: themeConfig.info,
+        text: themeConfig.info,
+        icon: "●",
+        label: "Checklist • Started",
+        pulse: false,
+    };
+    }
+
+    if (st === "in_progress") {
+      return {
+        ...base,
+        bg: `${themeConfig.warning}18`, // orange
+        border: themeConfig.warning,
+        text: themeConfig.warning,
+        icon: "●",
+        label: "Checklist • In progress",
+        pulse: true,
+      };
+    }
+
+    if (st === "completed") {
+      return {
+        ...base,
+        bg: `${themeConfig.success}22`, // green
+        border: themeConfig.success,
+        text: themeConfig.success,
+        icon: "✓",
+        label: "Checklist • Completed",
+        pulse: false,
+      };
+    }
+  }
+
+  return base;
+};
+
+
+  // const getFlatStatusConfig = (flat) => {
+  //   if (!flat)
+  //     return {
+  //       bg: "transparent",
+  //       border: "transparent",
+  //       text: "transparent",
+  //       icon: "○",
+  //     };
+
+  //   const configs = {
+  //     occupied: {
+  //       bg: `${themeConfig.accent}25`,
+  //       border: themeConfig.accent,
+  //       text: themeConfig.textPrimary,
+  //       icon: "●",
+  //       label: "Occupied",
+  //       pulse: false,
+  //     },
+  //     available: {
+  //       bg: `${themeConfig.success}20`,
+  //       border: themeConfig.success,
+  //       text: themeConfig.success,
+  //       icon: "○",
+  //       label: "Available",
+  //       pulse: true,
+  //     },
+  //     maintenance: {
+  //       bg: `${themeConfig.warning}20`,
+  //       border: themeConfig.warning,
+  //       text: themeConfig.warning,
+  //       icon: "⚠",
+  //       label: "Maintenance",
+  //       pulse: true,
+  //     },
+  //     reserved: {
+  //       bg: `${themeConfig.error}20`,
+  //       border: themeConfig.error,
+  //       text: themeConfig.error,
+  //       icon: "◐",
+  //       label: "Reserved",
+  //       pulse: false,
+  //     },
+  //     default: {
+  //       bg: `${themeConfig.textSecondary}10`,
+  //       border: themeConfig.textSecondary,
+  //       text: themeConfig.textSecondary,
+  //       icon: "□",
+  //       label: "Unknown",
+  //       pulse: false,
+  //     },
+  //   };
+
+  //   return configs[flat.status?.toLowerCase()] || configs.default;
+  // };
 
   // Handle floor selection
   const handleFloorClick = (levelId) => {
@@ -2298,10 +2570,12 @@ useEffect(() => {
   };
 
   // Enhanced Flat Card Component
-  const FlatCard = ({ flat, isCompact = false, level, showingAll = false }) => {
-    const config = getFlatStatusConfig(flat);
-    const isSelected = selectedFlats.has(flat.id);
-    const isHovered = hoveredFlat === flat.id;
+ const FlatCard = ({ flat, isCompact = false, level, showingAll = false }) => {
+  const checklistInfo = flatChecklistMap[flat.id]; // { state, ... } ya undefined
+
+  const config = getFlatStatusConfig(flat, checklistInfo);
+  const isSelected = selectedFlats.has(flat.id);
+  const isHovered = hoveredFlat === flat.id;
 
     return (
       <div
@@ -2366,6 +2640,8 @@ useEffect(() => {
           }`}
           style={{ color: config.text }}
         >
+        
+
 {getPrettyUnitNumber(flat.number)}
         </div>
 
@@ -2380,6 +2656,26 @@ useEffect(() => {
             {flat.flattype.type_name}
           </div>
         )}
+        {checklistInfo && (
+  <div
+    className="mt-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
+    style={{
+      background:
+        checklistInfo.state === "completed"
+          ? themeConfig.success
+          : checklistInfo.state === "in_progress"
+          ? themeConfig.warning
+          : themeConfig.info,
+      color: "white",
+    }}
+  >
+    {checklistInfo.state === "completed"
+      ? "Checklist Completed"
+      : checklistInfo.state === "in_progress"
+      ? "Checklist In Progress"
+      : "Checklist Started"}
+  </div>
+)}
 
         {/* Enhanced Hover Tooltip */}
         {/* Enhanced Hover Tooltip */}
@@ -2425,37 +2721,56 @@ useEffect(() => {
 
   // Enhanced Floor Component
   const FloorComponent = ({ level, floorNumber }) => {
-    const flats = level.flats || [];
-    const isExpanded = expandedFloor === level.id;
-    const showingAll = showAllFlats[level.id];
-    const visibleFlats = showingAll ? flats : flats.slice(0, 5);
-    const hasMore = flats.length > 5;
-    const floorOccupancy = flats.length
-      ? Math.round(
-          (flats.filter((f) => f.status === "occupied").length / flats.length) *
-            100
-        )
-      : 0;
+  const flats = level.flats || [];
+  const isExpanded = expandedFloor === level.id;
+  const showingAll = showAllFlats[level.id];
+  const visibleFlats = showingAll ? flats : flats.slice(0, 5);
+  const hasMore = flats.length > 5;
+  const floorOccupancy = flats.length
+    ? Math.round(
+        (flats.filter((f) => f.status === "occupied").length / flats.length) *
+          100
+      )
+    : 0;
+
+  // 🔵 NEW: check if this floor has ANY checklist
+  const hasChecklistOnFloor = flats.some(
+    (flat) => !!flatChecklistMap[flat.id]
+  );
+
+  const floorBorderBase = hasChecklistOnFloor
+    ? themeConfig.info // blue
+    : themeConfig.border;
+
+  const floorShadowBase = hasChecklistOnFloor
+    ? themeConfig.info
+    : themeConfig.border;
+
+  const floorHeaderColor = hasChecklistOnFloor
+    ? themeConfig.info
+    : themeConfig.accent; // orange if no checklist
+
 
     return (
       <div
-        className="border-2 rounded-2xl overflow-hidden transition-all duration-500 transform hover:scale-[1.01] hover:shadow-2xl"
-        style={{
-          background: themeConfig.cardBg,
-          borderColor: isExpanded
-            ? themeConfig.accent
-            : `${themeConfig.border}40`,
-          boxShadow: isExpanded
-            ? `0 12px 48px ${themeConfig.accent}20`
-            : `0 4px 16px ${themeConfig.border}15`,
-        }}
-      >
+  className="border-2 rounded-2xl overflow-hidden transition-all duration-500 transform hover:scale-[1.01] hover:shadow-2xl"
+  style={{
+    background: themeConfig.cardBg,
+    borderColor: isExpanded
+      ? floorBorderBase
+      : `${floorBorderBase}40`,
+    boxShadow: isExpanded
+      ? `0 12px 48px ${floorShadowBase}26`
+      : `0 4px 16px ${floorShadowBase}15`,
+  }}
+>
+
         {/* Enhanced Floor Header */}
         <div
           onClick={() => handleFloorClick(level.id)}
           className={`
-            relative cursor-pointer p-4 transition-all duration-300
-            ${isExpanded ? "pb-6" : "hover:pb-5"}
+            className="relative cursor-pointer p-4 transition-all duration-300
+            ${isExpanded ? "pb-6" : "hover:pb-5"}"
           `}
           style={{
             background: isExpanded
@@ -2476,12 +2791,12 @@ useEffect(() => {
           <div className="relative z-10 flex items-center justify-between">
             <div className="flex items-center gap-4">
               {/* Enhanced Floor Badge */}
-              <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-white shadow-lg transform transition-all duration-300 hover:scale-110 hover:rotate-3"
-                style={{
-                  background: `linear-gradient(135deg, ${themeConfig.accent}, ${themeConfig.accent}dd)`,
-                }}
-              >
+             <div
+  className="w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-white shadow-lg transform transition-all duration-300 hover:scale-110 hover:rotate-3"
+  style={{
+    background: `linear-gradient(135deg, ${floorHeaderColor}, ${floorHeaderColor}dd)`,
+  }}
+>
                 <svg
                   width="24"
                   height="24"
@@ -2534,13 +2849,14 @@ useEffect(() => {
           </div>
 
           {/* Enhanced Progress Bar */}
-          <div
-            className="absolute bottom-0 left-0 h-1 transition-all duration-700 rounded-full"
-            style={{
-              width: isExpanded ? "100%" : "0%",
-              background: `linear-gradient(90deg, ${themeConfig.accent}, ${themeConfig.success})`,
-            }}
-          ></div>
+         <div
+  className="absolute bottom-0 left-0 h-1 transition-all duration-700 rounded-full"
+  style={{
+    width: isExpanded ? "100%" : "0%",
+    background: `linear-gradient(90deg, ${floorHeaderColor}, ${themeConfig.success})`,
+  }}
+></div>
+
         </div>
 
         {/* Enhanced Expandable Section */}

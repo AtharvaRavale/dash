@@ -2333,6 +2333,7 @@ import { useNavigate } from "react-router-dom";
 import { useTheme } from "../ThemeContext";
 import axiosInstance, { organnizationInstance } from "../api/axiosInstance";
 import axios from "axios";
+import {  getStagesByPhase } from "../api";
 
 const ORANGE = "#ffbe63";
 const BG_OFFWHITE = "#fcfaf7";
@@ -2395,6 +2396,83 @@ function Profile({ onClose }) {
   );
   const [flowRoleLoading, setFlowRoleLoading] = useState(false);
   const [flowRoleError, setFlowRoleError] = useState("");
+// project_id -> { ROLE_CODE -> { role, stages: [...], hasGlobalAllChecklist } }
+const [flowRoleStagesByProject, setFlowRoleStagesByProject] = useState({});
+
+
+
+
+const getStageInfo = (projectId, roleCode) => {
+  if (!projectId || !roleCode) return null;
+
+  const projMap = flowRoleStagesByProject[projectId];
+  if (!projMap) return null;
+
+  const info = projMap[String(roleCode).toUpperCase()];
+  if (!info) return null;
+
+  // duplicate stage ids remove kar do
+  const uniqueStages = [];
+  const seen = new Set();
+  info.stages.forEach((s) => {
+    if (!s.stageId || seen.has(s.stageId)) return;
+    seen.add(s.stageId);
+    uniqueStages.push(s);
+  });
+
+  const namesWithPurpose = uniqueStages.map((s) =>
+    s.purposeName ? `${s.stageName} (${s.purposeName})` : s.stageName
+  );
+
+  let label = null;
+  if (info.hasGlobalAllChecklist && !uniqueStages.length) {
+    label = "All stages (all checklists)";
+  } else if (info.hasGlobalAllChecklist && namesWithPurpose.length) {
+    label = `All checklists in ${namesWithPurpose.join(", ")}`;
+  } else if (namesWithPurpose.length === 1) {
+    label = namesWithPurpose[0];
+  } else if (namesWithPurpose.length > 1) {
+    label = namesWithPurpose.join(", ");
+  }
+
+  return {
+    ...info,
+    stages: uniqueStages,
+    label,
+  };
+};
+
+
+// const getStageInfo = (projectId, roleCode) => {
+//   if (!projectId || !roleCode) return null;
+//   const projMap = flowRoleStagesByProject[projectId];
+//   if (!projMap) return null;
+
+//   const key = String(roleCode).toUpperCase();
+//   const info = projMap[key];
+//   if (!info) return null;
+
+//   const stageIds = info.stages
+//     .map((s) => s.stageId)
+//     .filter(Boolean);
+
+//   let label = null;
+
+//   if (info.hasGlobalAllChecklist && !stageIds.length) {
+//     label = "All stages (all checklists)";
+//   } else if (info.hasGlobalAllChecklist && stageIds.length) {
+//     label = `All checklists in stages ${stageIds.join(", ")}`;
+//   } else if (stageIds.length === 1) {
+//     label = `Stage ${stageIds[0]}`;
+//   } else if (stageIds.length > 1) {
+//     label = `Stages ${stageIds.join(", ")}`;
+//   }
+
+//   return {
+//     ...info,
+//     label,
+//   };
+// };
 
 
   const fileToDataUrl = (file) =>
@@ -2712,59 +2790,211 @@ function Profile({ onClose }) {
   //   loadRoles();
   // }, [userData, accesses]); // accesses is already a state above
   useEffect(() => {
-    if (!userData || !activeProjectId) return;
+  if (!userData || !activeProjectId) return;
 
-    const uid = String(userData.user_id || userData.id || "");
-    const pid = activeProjectId;
-    if (!uid || !pid) return;
+  const uid = String(userData.user_id || userData.id || "");
+  const pid = activeProjectId;
+  if (!uid || !pid) return;
 
-    const loadRoles = async () => {
-      try {
-        setFlowRoleLoading(true);
-        setFlowRoleError("");
+  const loadRolesAndStages = async () => {
+    try {
+      setFlowRoleLoading(true);
+      setFlowRoleError("");
 
-        const { data } = await getUserAccessForProject(uid, pid);
-        const list = Array.isArray(data) ? data : [];
+      // 1) UserAccess fetch
+      const { data } = await getUserAccessForProject(uid, pid);
+      const list = Array.isArray(data) ? data : [];
 
-        const WHITELIST = ["MAKER", "CHECKER", "SUPERVISOR","INTIALIZER"];
-        const rolesSet = new Set();
+      const WHITELIST = ["MAKER", "CHECKER", "SUPERVISOR", "INTIALIZER"];
 
-        list.forEach((access) => {
-          if (Array.isArray(access.roles)) {
-            access.roles.forEach((r) => {
-              if (!r) return;
-              const raw = typeof r === "string" ? r : r.role || r.name;
-              if (!raw) return;
-              const norm = String(raw).toUpperCase();
-              if (WHITELIST.includes(norm)) rolesSet.add(norm);
-            });
-          } else if (access.role) {
-            const norm = String(access.role).toUpperCase();
+      const rolesSet = new Set();
+      const phaseIdSet = new Set();
+
+      // phase ids + roles collect karo
+      list.forEach((access) => {
+        if (access.phase_id) {
+          phaseIdSet.add(access.phase_id);
+        }
+
+        if (Array.isArray(access.roles)) {
+          access.roles.forEach((r) => {
+            if (!r) return;
+            const raw = typeof r === "string" ? r : r.role || r.name;
+            if (!raw) return;
+            const norm = String(raw).toUpperCase();
             if (WHITELIST.includes(norm)) rolesSet.add(norm);
+          });
+        } else if (access.role) {
+          const norm = String(access.role).toUpperCase();
+          if (WHITELIST.includes(norm)) rolesSet.add(norm);
+        }
+      });
+
+      const rolesArr = Array.from(rolesSet);
+      setFlowRoles(rolesArr);
+
+      // 2) har unique phase ke liye stages fetch karo
+      let stageMap = {};
+      if (phaseIdSet.size > 0) {
+        const phaseIds = Array.from(phaseIdSet);
+
+        const responses = await Promise.all(
+          phaseIds.map((phId) =>
+            getStagesByPhase(phId).catch(() => null)
+          )
+        );
+
+        responses.forEach((res, idx) => {
+          if (!res || !Array.isArray(res.data)) return;
+
+          res.data.forEach((st) => {
+            // purpose ka naam: "Snagging"
+            const purposeName =
+              st.purpose?.name?.purpose?.name ||
+              st.purpose?.purpose?.name ||
+              st.purpose?.name ||
+              null;
+
+            stageMap[st.id] = {
+              id: st.id,
+              name: st.name,                  // "stage 1"
+              phaseId: st.phase ?? null,      // 139
+              purposeId: st.purpose?.id ?? null,
+              purposeName,                    // "Snagging"
+            };
+          });
+        });
+      }
+
+      // 3) bucket per role banao (kis role ko kaunse stage)
+      const bucketsByRole = {};
+      const ensureBucket = (roleCode) => {
+        const key = String(roleCode).toUpperCase();
+        if (!bucketsByRole[key]) {
+          bucketsByRole[key] = {
+            hasGlobalAllChecklist: false,
+            stages: [],  // {stageId, stageName, purposeName, ...}
+          };
+        }
+        return bucketsByRole[key];
+      };
+
+      list.forEach((access) => {
+        let accessRoles = [];
+        if (Array.isArray(access.roles)) {
+          accessRoles = access.roles
+            .map((r) => (typeof r === "string" ? r : r.role || r.name))
+            .filter(Boolean);
+        } else if (access.role) {
+          accessRoles = [access.role];
+        }
+
+        accessRoles.forEach((rawRole) => {
+          const key = String(rawRole).toUpperCase();
+          if (!WHITELIST.includes(key)) return;
+
+          const bucket = ensureBucket(key);
+
+          // pure project ka All_checklist (kisi ek role ke liye)
+          if (access.All_checklist && !access.stage_id) {
+            bucket.hasGlobalAllChecklist = true;
+          }
+
+          // specific stage access
+          if (access.stage_id) {
+            const st = stageMap[access.stage_id] || {};
+            bucket.stages.push({
+              stageId: access.stage_id,
+              stageName: st.name || `Stage ${access.stage_id}`,
+              phaseId: access.phase_id || st.phaseId || null,
+              purposeId: access.purpose_id || st.purposeId || null,
+              purposeName: st.purposeName || null,
+              allChecklist: !!access.All_checklist,
+            });
           }
         });
+      });
 
-        const rolesArr = Array.from(rolesSet);
-        setFlowRoles(rolesArr);
+      // 4) project wise store karo
+      setFlowRoleStagesByProject((prev) => ({
+        ...prev,
+        [pid]: bucketsByRole,
+      }));
 
-        const stored = localStorage.getItem("FLOW_ROLE");
-        if (stored && rolesArr.includes(stored)) {
-          setFlowRole(stored);
-        } else if (!flowRole && rolesArr.length) {
-          const first = rolesArr[0];
-          setFlowRole(first);
-          localStorage.setItem("FLOW_ROLE", first);
-        }
-      } catch (e) {
-        console.error("Failed to load flow roles", e);
-        setFlowRoleError("Could not load roles for this project.");
-      } finally {
-        setFlowRoleLoading(false);
+      // 5) FLOW_ROLE ko sync rakho
+      const stored = localStorage.getItem("FLOW_ROLE");
+      if (stored && rolesArr.includes(stored)) {
+        setFlowRole(stored);
+      } else if (!flowRole && rolesArr.length) {
+        const first = rolesArr[0];
+        setFlowRole(first);
+        localStorage.setItem("FLOW_ROLE", first);
       }
-    };
+    } catch (e) {
+      console.error("Failed to load flow roles + stages", e);
+      setFlowRoleError("Could not load roles for this project.");
+    } finally {
+      setFlowRoleLoading(false);
+    }
+  };
 
-    loadRoles();
-  }, [userData, activeProjectId]);   // <- accesses ki jagah ye
+  loadRolesAndStages();
+}, [userData, activeProjectId]);   // ✅ same dependencies
+
+  // useEffect(() => {
+  //   if (!userData || !activeProjectId) return;
+
+  //   const uid = String(userData.user_id || userData.id || "");
+  //   const pid = activeProjectId;
+  //   if (!uid || !pid) return;
+
+  //   const loadRoles = async () => {
+  //     try {
+  //       setFlowRoleLoading(true);
+  //       setFlowRoleError("");
+
+  //       const { data } = await getUserAccessForProject(uid, pid);
+  //       const list = Array.isArray(data) ? data : [];
+
+  //       const WHITELIST = ["MAKER", "CHECKER", "SUPERVISOR","INTIALIZER"];
+  //       const rolesSet = new Set();
+
+  //       list.forEach((access) => {
+  //         if (Array.isArray(access.roles)) {
+  //           access.roles.forEach((r) => {
+  //             if (!r) return;
+  //             const raw = typeof r === "string" ? r : r.role || r.name;
+  //             if (!raw) return;
+  //             const norm = String(raw).toUpperCase();
+  //             if (WHITELIST.includes(norm)) rolesSet.add(norm);
+  //           });
+  //         } else if (access.role) {
+  //           const norm = String(access.role).toUpperCase();
+  //           if (WHITELIST.includes(norm)) rolesSet.add(norm);
+  //         }
+  //       });
+
+  //       const rolesArr = Array.from(rolesSet);
+  //       setFlowRoles(rolesArr);
+
+  //       const stored = localStorage.getItem("FLOW_ROLE");
+  //       if (stored && rolesArr.includes(stored)) {
+  //         setFlowRole(stored);
+  //       } else if (!flowRole && rolesArr.length) {
+  //         const first = rolesArr[0];
+  //         setFlowRole(first);
+  //         localStorage.setItem("FLOW_ROLE", first);
+  //       }
+  //     } catch (e) {
+  //       console.error("Failed to load flow roles", e);
+  //       setFlowRoleError("Could not load roles for this project.");
+  //     } finally {
+  //       setFlowRoleLoading(false);
+  //     }
+  //   };
+
+  //   loadRoles();
+  // }, [userData, activeProjectId]);   // <- accesses ki jagah ye
 
   // Keep selected flow role in localStorage for other pages
   useEffect(() => {
@@ -3096,6 +3326,80 @@ function Profile({ onClose }) {
       setAttBusy(false);
     }
   };
+  useEffect(() => {
+  if (!userData || !Array.isArray(accesses) || !accesses.length) return;
+
+  const uid = String(userData.user_id || userData.id || "");
+  if (!uid) return;
+
+  // unique project ids
+  const uniquePids = [
+    ...new Set(accesses.map((a) => a.project_id).filter(Boolean)),
+  ].filter((pid) => !flowRoleStagesByProject[pid]); // jo already loaded hai unko skip karo
+
+  if (!uniquePids.length) return;
+
+  uniquePids.forEach(async (pid) => {
+    try {
+      const { data } = await getUserAccessForProject(uid, pid);
+      const list = Array.isArray(data) ? data : [data];
+
+      const roleStageMap = {};
+
+      list.forEach((access) => {
+        if (!Array.isArray(access.roles)) return;
+
+        access.roles.forEach((r) => {
+          if (!r) return;
+          const code = typeof r === "string" ? r : r.role || r.name;
+          if (!code) return;
+
+          const key = String(code).toUpperCase();
+
+          if (!roleStageMap[key]) {
+            roleStageMap[key] = {
+              role: code,
+              stages: [],
+              hasGlobalAllChecklist: false,
+            };
+          }
+
+          const bucket = roleStageMap[key];
+
+          // backend field: All_checklist (capital A)
+          if (access.All_checklist && !access.stage_id) {
+            bucket.hasGlobalAllChecklist = true;
+          }
+
+          if (access.stage_id) {
+            const already = bucket.stages.some(
+              (s) => s.stageId === access.stage_id
+            );
+            if (!already) {
+              bucket.stages.push({
+                stageId: access.stage_id,
+                phaseId: access.phase_id,
+                purposeId: access.purpose_id,
+                allChecklist: !!access.All_checklist,
+              });
+            }
+          }
+        });
+      });
+
+      setFlowRoleStagesByProject((prev) => ({
+        ...prev,
+        [pid]: roleStageMap,
+      }));
+    } catch (err) {
+      console.error("Failed to load role/stage map for project", pid, err);
+    }
+  });
+}, [userData, accesses, flowRoleStagesByProject]);
+
+const currentFlowRoleStage = activeProjectId
+  ? getStageInfo(activeProjectId, flowRole)
+  : null;
 
   // Calendar rendering helpers
   const getAttendanceStatus = (date) => {
@@ -3458,6 +3762,20 @@ function Profile({ onClose }) {
             >
               Act as role for workflows
             </label>
+            {currentFlowRoleStage && currentFlowRoleStage.label && (
+  <div
+    style={{
+      marginTop: 4,
+      fontSize: 11,
+      textAlign: "center",
+      color: "#bfa672",
+    }}
+  >
+    Assigned stages:&nbsp;
+    <strong>{currentFlowRoleStage.label}</strong>
+  </div>
+)}
+
 
             {flowRoleLoading ? (
               <div
@@ -3800,52 +4118,77 @@ function Profile({ onClose }) {
                 </h3>
               </div>
               <div className="space-y-3">
-                {accesses.slice(0, 3).map(
-                  (access, idx) =>
-                    isValidString(access.project_id) && (
-                      <div
-                        key={idx}
-                        className="rounded-xl p-4 transition-all hover:shadow-md"
-                        style={{
-                          background: "#fff",
-                          border: `1px solid ${borderColor}`,
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                        }}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span
-                            className="font-bold text-base"
-                            style={{ color: valueColor }}
-                          >
-                            {getProjectName(access)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex flex-wrap gap-2">
-                            {access.roles?.slice(0, 2).map((role, j) => {
-                              const roleStr =
-                                typeof role === "string" ? role : role?.role;
-                              return isValidString(roleStr) ? (
-                                <span
-                                  key={j}
-                                  className="px-3 py-1"
-                                  style={{
-                                    background: ORANGE,
-                                    color: "#ad5700",
-                                    borderRadius: 12,
-                                    fontWeight: 600,
-                                    fontSize: 12,
-                                  }}
-                                >
-                                  {roleStr}
-                                </span>
-                              ) : null;
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                )}
+               {accesses.slice(0, 3).map(
+  (access, idx) =>
+    isValidString(access.project_id) && (
+      <div
+        key={idx}
+        className="rounded-xl p-4 transition-all hover:shadow-md"
+        style={{
+          background: "#fff",
+          border: `1px solid ${borderColor}`,
+          boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+        }}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <span
+            className="font-bold text-base"
+            style={{ color: valueColor }}
+          >
+            {getProjectName(access)}
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          {/* Roles badges */}
+          <div className="flex flex-wrap gap-2">
+            {access.roles?.slice(0, 2).map((role, j) => {
+              const roleStr =
+                typeof role === "string" ? role : role?.role;
+              return isValidString(roleStr) ? (
+                <span
+                  key={j}
+                  className="px-3 py-1"
+                  style={{
+                    background: ORANGE,
+                    color: "#ad5700",
+                    borderRadius: 12,
+                    fontWeight: 600,
+                    fontSize: 12,
+                  }}
+                >
+                  {roleStr}
+                </span>
+              ) : null;
+            })}
+          </div>
+
+          {/* 👇 NEW: Stage info (current selected FLOW_ROLE ke hisaab se) */}
+          {flowRole && (
+            (() => {
+              const stageInfo = getStageInfo(access.project_id, flowRole);
+              if (!stageInfo || !stageInfo.label) return null;
+              return (
+                <div
+                  className="text-xs mt-1"
+                  style={{ color: "#bfa672" }}
+                >
+                  Stage access as{" "}
+                  <span style={{ fontWeight: 600 }}>{flowRole}</span>:{" "}
+                  <span
+                    style={{ fontWeight: 600, color: valueColor }}
+                  >
+                    {stageInfo.label}
+                  </span>
+                </div>
+              );
+            })()
+          )}
+        </div>
+      </div>
+    )
+)}
+
                 {accesses.length > 3 && (
                   <div
                     className="text-center text-sm pt-2 font-medium"
@@ -3857,6 +4200,7 @@ function Profile({ onClose }) {
               </div>
             </div>
           )}
+          
 
           {/* Contact Information */}
           {hasContactData() && (
