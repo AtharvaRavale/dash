@@ -74,29 +74,6 @@ function getDisplayRole(userData) {
 
 
 
-// function getDisplayRole(userData) {
-//   if (!userData) return "User";
-//   let allRoles = [];
-//   if (Array.isArray(userData.accesses)) {
-//     userData.accesses.forEach((access) => {
-//       if (Array.isArray(access.roles)) {
-//         access.roles.forEach((role) => {
-//           const roleStr = typeof role === "string" ? role : role?.role;
-//           if (roleStr) allRoles.push(roleStr);
-//         });
-//       }
-//     });
-//   }
-//   if (userData?.superadmin || userData?.is_staff) return "Super Admin";
-//   if (userData?.is_client) return "Admin"; // Treat Client as Admin
-//   if (userData?.is_manager) return "Manager";
-//   if (allRoles.length > 0) {
-//     // Show only unique roles, comma-separated
-//     const uniqueRoles = [...new Set(allRoles)];
-//     return uniqueRoles.join(", ");
-//   }
-//   return "User";
-// }
 
 function hasSecurityGuardRole(data) {
    if (!data) return false;
@@ -150,22 +127,6 @@ useEffect(() => {
 
 
 
-//  const blobToDataURL = (blob) =>
-//    new Promise((res) => {
-//      const fr = new FileReader();
-//      fr.onload = () => res(fr.result);
-//      fr.readAsDataURL(blob);
-//    });
-//  async function safeFetchToDataURL(url) {
-//    try {
-//      const resp = await fetch(url, { mode: "cors", credentials: "include" });
-//      if (!resp.ok) return null;
-//      const blob = await resp.blob();
-//      return await blobToDataURL(blob);
-//    } catch {
-//      return null;
-//    }
-//  }
 
 function isSameOrigin(u) {
    try { return new URL(u, window.location.origin).origin === window.location.origin; }
@@ -240,7 +201,7 @@ useEffect(() => {
 const mergedRoles = deriveRolesFromToken(tokenData);
 
   // Build a user object straight from JWT (includes photo/profile_image we put in the token)
-  const userFromJWT = {
+    const userFromJWT = {
     id: tokenData.user_id,
     user_id: tokenData.user_id,
     username: tokenData.username,
@@ -250,21 +211,30 @@ const mergedRoles = deriveRolesFromToken(tokenData);
     is_client: tokenData.is_client,
     superadmin: tokenData.superadmin,
     is_manager: tokenData.is_manager,
-     // 🔴 NEW: watcher flags + project lists
-  is_project_manager: tokenData.is_project_manager,
-  is_project_head: tokenData.is_project_head,
-  project_manager_projects: tokenData.project_manager_projects || [],
-  project_head_projects: tokenData.project_head_projects || [],
+
+    // watcher flags + project lists
+    is_project_manager: tokenData.is_project_manager,
+    is_project_head: tokenData.is_project_head,
+    project_manager_projects: tokenData.project_manager_projects || [],
+    project_head_projects: tokenData.project_head_projects || [],
+
     accesses: tokenData.accesses || [],
     org: tokenData.org,
     company: tokenData.company,
     entity: tokenData.entity,
     role: tokenData.role,
     roles: tokenData.roles,
-    // <- use photo/profile_image from JWT if present
+
+    // avatar
     profile_image: tokenData.profile_image || tokenData.photo || null,
     photo:        tokenData.profile_image || tokenData.photo || null,
+
+    // 🔴 NEW — signature persisted in JWT
+    signature_url: tokenData.signature_url || null,
+    signature_width: tokenData.signature_width ?? null,
+    signature_height: tokenData.signature_height ?? null,
   };
+
 
   // Redux + localStorage
   dispatch(setUserData(userFromJWT));
@@ -282,51 +252,6 @@ const mergedRoles = deriveRolesFromToken(tokenData);
   toast.success("You are already logged in!");
 }, [navigate, dispatch]);
 
-//   useEffect(() => {
-//     const token =
-//       localStorage.getItem("TOKEN") || localStorage.getItem("ACCESS_TOKEN");
-//     if (token) {
-//       const tokenData = decodeJWT(token);
-//       if (tokenData) {
-//         dispatch(
-//           setUserData({
-//             id: tokenData.user_id,
-//             user_id: tokenData.user_id,
-//             username: tokenData.username,
-//             email: tokenData.email,
-//             phone_number: tokenData.phone_number,
-//             has_access: tokenData.has_access,
-//             is_client: tokenData.is_client,
-//             superadmin: tokenData.superadmin,
-//             is_manager: tokenData.is_manager,
-//             accesses: tokenData.accesses,
-//             org: tokenData.org,
-//             company: tokenData.company,
-//             entity: tokenData.entity,
-//             role: tokenData.role,
-//             roles: tokenData.roles,
-//           })
-//         );
-//         // Set all roles for sidebar and display
-//         localStorage.setItem(
-//           "ROLE",
-//           getDisplayRole(tokenData)
-//         );
-//         localStorage.setItem(
-//           "ACCESSES",
-//           JSON.stringify(tokenData.accesses || [])
-//         );
-//       }
-//  if (hasSecurityGuardRole(tokenData)) {
-//    navigate("/guard/onboarding");
-//  } else {
-//    navigate("/config");
-//  }
-//            toast.success("You are already logged in!");
-//     }
-//   }, [navigate, dispatch]);
-
-  // Field change handler
   const onChange = (e) => {
     setFormData((prev) => ({
       ...prev,
@@ -391,35 +316,13 @@ const mergedRoles = deriveRolesFromToken(tokenData);
     accesses: tokenData.accesses || [],
     profile_image: tokenData.profile_image || tokenData.photo || null,
     photo:        tokenData.profile_image || tokenData.photo || null,
+    signature_url: tokenData.signature_url || null,
+    signature_width: tokenData.signature_width ?? null,
+    signature_height: tokenData.signature_height ?? null,
   };
 }
 
-        // } else if (tokenData) {
-        //   userData = {
-        //     id: tokenData.user_id,
-        //     user_id: tokenData.user_id,
-        //     username: tokenData.username,
-        //     email: tokenData.email,
-        //     phone_number: tokenData.phone_number,
-        //     has_access: tokenData.has_access,
-        //     is_client: tokenData.is_client,
-        //     superadmin: tokenData.superadmin,
-        //     is_manager: tokenData.is_manager,
-        //     org: tokenData.org,
-        //     company: tokenData.company,
-        //     entity: tokenData.entity,
-        //     role: tokenData.role,
-        //     roles: tokenData.roles,
-        //     accesses: tokenData.accesses,
-        //   };
-        // }
-
-        // if (userData) {
-        //   dispatch(setUserData(userData));
-        //   localStorage.setItem("USER_DATA", JSON.stringify(userData));
-        //   // --- SET ALL ROLES ---
-        //   localStorage.setItem("ROLE", getDisplayRole(userData));
-        // }
+       
         if (!userData && tokenData?.user_id) {
           try {
             const res = await getUserDetailsById(tokenData.user_id);
@@ -427,33 +330,29 @@ const mergedRoles = deriveRolesFromToken(tokenData);
          } catch {}
         }
 
-//       if (userData) {
-//   // cache avatar URL (+ cache-bust) and a base64 fallback, then persist USER_DATA
-//   userData = await cacheAvatarForUser(userData);
 
-//   dispatch(setUserData(userData));
-//   localStorage.setItem("ROLE", getDisplayRole(userData));
-// }
-// after you've set userData from API or tokenData (and after the getUserDetailsById fallback)
-// if (userData) {
-//   // ensure photo fields are present even if API payload didn’t include them
-//   if (tokenData) {
-//     const fromJWT = tokenData.profile_image || tokenData.photo || null;
-//     if (fromJWT && !userData.profile_image) userData.profile_image = fromJWT;
-//     if (fromJWT && !userData.photo)         userData.photo = fromJWT;
-//   }
-
-//   // now cache + persist + dispatch
-//   userData = await cacheAvatarForUser(userData);
-//   dispatch(setUserData(userData));
-//   localStorage.setItem("ROLE", getDisplayRole(userData));
-// }
 if (userData) {
   if (tokenData) {
     // photo sync
     const fromJWT = tokenData.profile_image || tokenData.photo || null;
     if (fromJWT && !userData.profile_image) userData.profile_image = fromJWT;
     if (fromJWT && !userData.photo)         userData.photo = fromJWT;
+
+    if (tokenData.signature_url && !userData.signature_url) {
+      userData.signature_url = tokenData.signature_url;
+    }
+    if (
+      tokenData.signature_width !== undefined &&
+      userData.signature_width == null
+    ) {
+      userData.signature_width = tokenData.signature_width;
+    }
+    if (
+      tokenData.signature_height !== undefined &&
+      userData.signature_height == null
+    ) {
+      userData.signature_height = tokenData.signature_height;
+    }
 
     // 🔴 NEW: watcher flags + roles sync from token
     if (tokenData.is_project_manager !== undefined) {

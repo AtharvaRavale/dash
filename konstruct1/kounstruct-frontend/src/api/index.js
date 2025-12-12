@@ -1609,3 +1609,180 @@ export function uploadMIRLogo(mirId, formData) {
 
 
 
+// api.js
+
+export function createMIRFull(formData) {
+  // POST /mir/full-create/
+  return axiosInstance.post("/mir/full-create/", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+}
+
+
+
+
+
+
+// ==== FORMS ENGINE (Dynamic Forms) ====
+
+export const listFormTemplates = () =>
+  axiosInstance.get("/forms/templates/", {
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+export const createFormTemplate = (payload) =>
+  axiosInstance.post("/forms/templates/", payload, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+export const updateFormTemplate = (id, payload) =>
+  axiosInstance.patch(`/forms/templates/${id}/`, payload, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+export const createFormTemplateVersion = (payload) =>
+  axiosInstance.post("/forms/template-versions/", payload, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+
+
+  // NEW: Excel → schema preview
+export const previewFormExcel = (file) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return axiosInstance.post("/forms/excel/preview/", fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+
+
+
+// ---- Form Packs (bundles) ----
+
+export const listFormPacks = () =>
+  axiosInstance.get("/forms/packs/", {
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const createFormPack = (payload) =>
+  axiosInstance.post("/forms/packs/", payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const updateFormPack = (id, payload) =>
+  axiosInstance.patch(`/forms/packs/${id}/`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const deleteFormPack = (id) =>
+  axiosInstance.delete(`/forms/packs/${id}/`, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const createFormPackItem = (payload) =>
+  axiosInstance.post("/forms/pack-items/", payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const deleteFormPackItem = (id) =>
+  axiosInstance.delete(`/forms/pack-items/${id}/`, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// Apply packs → project
+export const applyFormPacksToProject = (payload) =>
+  axiosInstance.post("/forms/packs/apply-to-project/", payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// Project ke liye assigned forms
+// export const getAssignedFormsForProject = (projectId, usageType) =>
+//   axiosInstance.get("/forms/assigned/", {
+//     params: {
+//       project_id: projectId,
+//       ...(usageType ? { usage_type: usageType } : {}),
+//     },
+//     headers: { "Content-Type": "application/json" },
+//   });
+
+// ✅ replace old version with this:
+// Project ke liye assigned forms
+// extraParams me usage_type, assignment_id, etc sab bhej sakte ho
+export const getAssignedFormsForProject = (projectId, extraParams = {}) =>
+  axiosInstance.get("/forms/assigned/", {
+    params: {
+      project_id: projectId,
+      ...extraParams,
+    },
+    headers: { "Content-Type": "application/json" },
+  });
+
+
+export const createFormResponse = (payload) =>
+  axiosInstance.post("/forms/responses/", payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+
+
+
+  // GET /users/forms/responses/:id/
+export const getFormResponse = (id) =>
+  axiosInstance.get(`/forms/responses/${id}/`);
+
+// POST /users/forms/responses/:id/forward/
+export const forwardFormResponse = (id, payload) =>
+  axiosInstance.post(`/forms/responses/${id}/forward/`, payload);
+
+
+// GET /users/forms/responses/
+export const listMyFormResponses = (params = {}) =>
+  axiosInstance.get("/forms/responses/", {
+    params,
+    headers: { "Content-Type": "application/json" },
+  });
+
+
+
+  // api.js
+
+export async function getFormTask(taskId) {
+  const { data } = await axiosInstance.get(`/forms/tasks/${taskId}/`);
+  return data;
+}
+
+export async function saveFormTask(taskId, payload) {
+  // expects { data: {...} }
+  const { data } = await axiosInstance.patch(`/forms/tasks/${taskId}/`, payload);
+  return data;
+}
+
+export async function forwardFormTask(taskId, payload) {
+  // expects { to_user_id: 123 }
+  const { data } = await axiosInstance.post(`/forms/tasks/${taskId}/forward/`, payload);
+  return data;
+}
+
+// GET /users/forms/tasks/
+export const listFormTasks = (params = {}) =>
+  axiosInstance.get("/forms/tasks/", { params });
+
+
+
+// PATCH /users/forms/responses/:id/
+export const updateFormResponse = (id, payload) =>
+  axiosInstance.patch(`/forms/responses/${id}/`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });

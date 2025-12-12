@@ -182,6 +182,16 @@ import MIRCreatePage from "./components/MIRCreatePage";
 import MIRInboxPage from "./components/MIRInboxPage";
 import MIRDetailPage from "./components/MIRDetailPage";
 import FlatReport from "./components/FlatReport";
+import FormsEnginePage from "./components/FormsEnginePage";
+import FormPacksPage from "./components/FormPacksPage";
+import ProjectFormsAssignedPage from "./components/ProjectFormsAssignedPage";
+import ProjectFormFillPage from "./components/ProjectFormFillPage";
+import MyFormResponsesPage from "./components/MyFormResponsesPage";
+import MyFormResponseDetailPage from "./components/MyFormResponseDetailPage";
+
+
+
+
 // For body background
 function BodyBgController() {
   const { theme } = useTheme();
@@ -281,6 +291,12 @@ function AppRoutes() {
           path="/PendingSupervisorItems"
           element={<PendingSupervisorItems />}
         />
+          <Route path="/forms" element={<FormsEnginePage />} />
+          <Route path="/form-packs" element={<FormPacksPage />} />
+          <Route path="/project-forms" element={<ProjectFormsAssignedPage />} />
+          <Route path="/project-forms/fill" element={<ProjectFormFillPage />} />
+
+
         <Route path="/mir/create" element={<MIRCreatePage />} />
         <Route path="/mir/:id" element={<MIRDetailPage />} />
         <Route path="/mir/inbox" element={<MIRInboxPage />} />
@@ -288,6 +304,8 @@ function AppRoutes() {
   path="/attendance/project"
   element={<AttendanceProjectPage />}
 />
+<Route path="/my-forms" element={<MyFormResponsesPage />} />
+  <Route path="/my-forms/:id" element={<MyFormResponseDetailPage />} />
 
 
         <Route path="/UsersManagement" element={<UsersManagement />} />

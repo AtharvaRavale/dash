@@ -269,7 +269,8 @@ function SideBarSetup({ overrideNavItems }) {
       { name: "Category management", path: "/category-sidebar" },
       { name: "Users Management", path: "/UsersManagement" },
       { name: "Scheduling", path: "/scheduling" },
-      { name: "Attendance", path: "/attendance/project" }, // ✅ use computed path
+      { name: "Attendance", path: "/attendance/project" },
+      { name: "Project Forms", path: "/project-forms" }, // ✅ use computed path
     ];
   } else if (rolee === "super admin") {
     navItems = [
@@ -278,6 +279,9 @@ function SideBarSetup({ overrideNavItems }) {
       { name: "User & Role", path: "/user" },
       { name: "Users Management", path: "/UsersManagement" },
       // { name: "Attendance", path: attendanceProjectPath }, // ✅
+      { name: "Forms", path: "/forms" },
+      { name: "Form Packs", path: "/form-packs" },
+      { name: "Project Forms", path: "/project-forms" },
       { name: "Purpose Management", path: "/create-purpose" },
     ];
   } else {
@@ -286,6 +290,7 @@ function SideBarSetup({ overrideNavItems }) {
       { name: "Users Management", path: "/UsersManagement" },
       // { name: "Attendance", path: attendanceProjectPath }, // ✅
       { name: "Company Setup", path: "/user-setup" },
+      { name: "Project Forms", path: "/project-forms" },
     ];
   }
 
