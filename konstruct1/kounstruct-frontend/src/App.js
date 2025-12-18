@@ -188,6 +188,8 @@ import ProjectFormsAssignedPage from "./components/ProjectFormsAssignedPage";
 import ProjectFormFillPage from "./components/ProjectFormFillPage";
 import MyFormResponsesPage from "./components/MyFormResponsesPage";
 import MyFormResponseDetailPage from "./components/MyFormResponseDetailPage";
+import WIRCreatePage from "./components/WIRCreatePage";
+import WIRDetailPage from "./components/WIRDetailPage";
 
 
 
@@ -300,6 +302,15 @@ function AppRoutes() {
         <Route path="/mir/create" element={<MIRCreatePage />} />
         <Route path="/mir/:id" element={<MIRDetailPage />} />
         <Route path="/mir/inbox" element={<MIRInboxPage />} />
+        <Route path="/wir/create" element={<WIRCreatePage />} />
+        <Route path="/wir/:id" element={<WIRDetailPage />} />
+
+        
+
+
+
+
+
         <Route
   path="/attendance/project"
   element={<AttendanceProjectPage />}

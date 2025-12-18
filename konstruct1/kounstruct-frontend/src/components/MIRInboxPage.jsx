@@ -7,7 +7,11 @@ import {
   getMyAssignedMIRs,
   acceptMIR,
   rejectMIR,
-  forwardMIR,
+
+  // ✅ NEW: WIR APIs
+  getMyAssignedWIRs,
+  acceptWIR,
+  rejectWIR,
 } from "../api";
 import { useTheme } from "../ThemeContext";
 
@@ -18,6 +22,9 @@ const BG_OFFWHITE = "#fcfaf7";
 export default function MIRInboxPage() {
   const navigate = useNavigate();
   const { theme } = useTheme();
+
+  // ✅ Dropdown: which list to show
+  const [docType, setDocType] = useState("MIR"); // "MIR" | "WIR"
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -42,12 +49,10 @@ export default function MIRInboxPage() {
     try {
       let accesses = [];
 
-      // Prefer ACCESSES key if present
       const accessesRaw = localStorage.getItem("ACCESSES");
       if (accessesRaw) {
         accesses = JSON.parse(accessesRaw);
       } else {
-        // Fallback: USER_DATA.accesses
         const userRaw = localStorage.getItem("USER_DATA");
         if (userRaw) {
           const user = JSON.parse(userRaw);
@@ -59,44 +64,59 @@ export default function MIRInboxPage() {
 
       if (Array.isArray(accesses) && accesses.length) {
         const map = {};
-        const optsMap = new Map(); // to keep unique projects
+        const optsMap = new Map();
 
         accesses.forEach((acc) => {
           if (acc.project_id && acc.project_name) {
             const key = String(acc.project_id);
             if (!map[key]) map[key] = acc.project_name;
-            if (!optsMap.has(key)) {
-              optsMap.set(key, acc.project_name);
-            }
+            if (!optsMap.has(key)) optsMap.set(key, acc.project_name);
           }
         });
 
         setProjectNameMap(map);
-        setProjectOptions(
-          Array.from(optsMap, ([id, name]) => ({ id, name }))
-        );
+        setProjectOptions(Array.from(optsMap, ([id, name]) => ({ id, name })));
       }
     } catch (e) {
       console.error("Error reading ACCESSES / USER_DATA from localStorage", e);
     }
   }, []);
 
-  // 🔹 2) Load MIR list
+  // ✅ 2) Load list when docType changes
+  useEffect(() => {
+    handleClearFilters(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docType]);
+
+  // initial load
   useEffect(() => {
     fetchList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const getListApi = () => (docType === "WIR" ? getMyAssignedWIRs : getMyAssignedMIRs);
+  const getAcceptApi = () => (docType === "WIR" ? acceptWIR : acceptMIR);
+  const getRejectApi = () => (docType === "WIR" ? rejectWIR : rejectMIR);
+
+  const getDocNumber = (row) => {
+    if (!row) return "—";
+    if (docType === "WIR") return row.wir_number || row.id;
+    return row.mir_number || row.id;
+  };
+
+  const getDocLocation = (row) => row?.location || row?.location_gridlines || row?.zone_area || "—";
+
   const fetchList = async (extraParams = {}) => {
     try {
       setLoading(true);
-      const res = await getMyAssignedMIRs(extraParams);
+      const apiFn = getListApi();
+      const res = await apiFn(extraParams);
       const data = res?.data || [];
-      const rows = Array.isArray(data) ? data : data.results || [];
-      setRows(rows);
+      const list = Array.isArray(data) ? data : data.results || [];
+      setRows(list);
     } catch (err) {
-      console.error("Failed to load MIR inbox", err);
-      toast.error("MIR inbox load nahi ho paayi.");
+      console.error("Failed to load inbox", err);
+      toast.error(`${docType} inbox load nahi ho paayi.`);
     } finally {
       setLoading(false);
     }
@@ -104,35 +124,36 @@ export default function MIRInboxPage() {
 
   const handleView = (id) => {
     if (!id) return;
-    navigate(`/mir/${id}`);
+    if (docType === "WIR") navigate(`/wir/${id}`);
+    else navigate(`/mir/${id}`);
   };
 
   const handleApplyFilters = () => {
     const params = {};
     if (statusFilter) params.status = statusFilter;
-    if (projectIdFilter) params.project_id = projectIdFilter; // string id bhi chalega
+    if (projectIdFilter) params.project_id = projectIdFilter;
     fetchList(params);
   };
 
-  const handleClearFilters = () => {
+  const handleClearFilters = (silent = false) => {
     setStatusFilter("");
     setProjectIdFilter("");
-    fetchList();
+    if (!silent) fetchList();
+    else fetchList(); // still reload, just no toast
   };
 
   const handleAccept = async (row) => {
     if (!row?.id) return;
-    if (!window.confirm(`Accept MIR #${row.mir_number || row.id}?`)) return;
+    if (!window.confirm(`Accept ${docType} #${getDocNumber(row)}?`)) return;
 
     setActionLoadingId(row.id);
     try {
-      await acceptMIR(row.id, {
-        comment: "Accepted via inbox.",
-      });
-      toast.success("MIR accept ho gaya.");
+      const acceptFn = getAcceptApi();
+      await acceptFn(row.id, { comment: `Accepted via ${docType} inbox.` });
+      toast.success(`${docType} accept ho gaya.`);
       await fetchList();
     } catch (err) {
-      console.error("Accept MIR error", err);
+      console.error("Accept error", err);
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
@@ -146,17 +167,16 @@ export default function MIRInboxPage() {
   const handleReject = async (row) => {
     if (!row?.id) return;
     const reason = window.prompt("Reject reason (optional):", "");
-    if (reason === null) return; // cancelled
+    if (reason === null) return;
 
     setActionLoadingId(row.id);
     try {
-      await rejectMIR(row.id, {
-        comment: reason || "Rejected via inbox.",
-      });
-      toast.success("MIR reject ho gaya.");
+      const rejectFn = getRejectApi();
+      await rejectFn(row.id, { comment: reason || `Rejected via ${docType} inbox.` });
+      toast.success(`${docType} reject ho gaya.`);
       await fetchList();
     } catch (err) {
-      console.error("Reject MIR error", err);
+      console.error("Reject error", err);
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
@@ -169,7 +189,8 @@ export default function MIRInboxPage() {
 
   const handleForward = (row) => {
     if (!row?.id) return;
-    navigate(`/mir/${row.id}?mode=forward`);
+    if (docType === "WIR") navigate(`/wir/${row.id}?mode=forward`);
+    else navigate(`/mir/${row.id}?mode=forward`);
   };
 
   // Helper function for status badges
@@ -207,67 +228,65 @@ export default function MIRInboxPage() {
   const stats = {
     total: rows.length,
     pending: rows.filter((r) => r.status === "PENDING").length,
-    approved: rows.filter(
-      (r) => r.status === "APPROVED" || r.status === "ACCEPTED"
-    ).length,
+    approved: rows.filter((r) => r.status === "APPROVED" || r.status === "ACCEPTED").length,
     rejected: rows.filter((r) => r.status === "REJECTED").length,
   };
+
+  const headerTitle =
+    docType === "WIR" ? "Work Inspection Requests" : "Material Inspection Requests";
+  const headerSub =
+    docType === "WIR" ? "Manage and review all assigned WIRs" : "Manage and review all assigned MIRs";
 
   return (
     <div style={{ ...styles.container, background: bgColor }}>
       {/* Header Section */}
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}> Material Inspection Requests</h1>
-          <p style={styles.subtitle}>Manage and review all assigned MIRs</p>
+          <h1 style={styles.title}>{headerTitle}</h1>
+          <p style={styles.subtitle}>{headerSub}</p>
         </div>
-        <button
-          onClick={() => navigate("/mir/create")}
-          style={styles.createButton}
-        >
-          + Create New MIR
-        </button>
+
+        {/* ✅ Right side: dropdown + create */}
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <select
+            value={docType}
+            onChange={(e) => setDocType(e.target.value)}
+            style={{
+              ...styles.filterSelect,
+              minWidth: 180,
+              borderColor: "#e2e8f0",
+              background: cardBg,
+            }}
+            title="Select list type"
+          >
+            <option value="MIR">MIR List</option>
+            <option value="WIR">WIR List</option>
+          </select>
+
+          <button
+            onClick={() => navigate(docType === "WIR" ? "/wir/create" : "/mir/create")}
+            style={styles.createButton}
+          >
+            + Create New {docType}
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
       <div style={styles.statsGrid}>
-        <div
-          style={{
-            ...styles.statCard,
-            background: cardBg,
-            borderLeft: `4px solid ${ORANGE}`,
-          }}
-        >
-          <div style={styles.statLabel}>Total MIRs</div>
+        <div style={{ ...styles.statCard, background: cardBg, borderLeft: `4px solid ${ORANGE}` }}>
+          <div style={styles.statLabel}>Total {docType}s</div>
           <div style={styles.statValue}>{stats.total}</div>
         </div>
-        <div
-          style={{
-            ...styles.statCard,
-            background: cardBg,
-            borderLeft: "4px solid #f59e0b",
-          }}
-        >
+        <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #f59e0b" }}>
           <div style={styles.statLabel}>Pending Review</div>
           <div style={styles.statValue}>{stats.pending}</div>
         </div>
-        <div
-          style={{
-            ...styles.statCard,
-            background: cardBg,
-            borderLeft: "4px solid #10b981",
-          }}
-        >
+        <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #10b981" }}>
           <div style={styles.statLabel}>Approved</div>
           <div style={styles.statValue}>{stats.approved}</div>
         </div>
-        <div
-          style={{
-            ...styles.statCard,
-            background: cardBg,
-            borderLeft: "4px solid #ef4444",
-          }}
-        >
+        <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #ef4444" }}>
           <div style={styles.statLabel}>Rejected</div>
           <div style={styles.statValue}>{stats.rejected}</div>
         </div>
@@ -278,11 +297,7 @@ export default function MIRInboxPage() {
         <div style={styles.filtersHeader}>
           <h3 style={styles.filtersTitle}> Filters</h3>
           {(statusFilter || projectIdFilter) && (
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              style={styles.clearButton}
-            >
+            <button type="button" onClick={() => handleClearFilters(false)} style={styles.clearButton}>
               ✕ Clear All
             </button>
           )}
@@ -307,7 +322,7 @@ export default function MIRInboxPage() {
             </select>
           </div>
 
-          {/* 🔹 Project Filter - dropdown with all project names */}
+          {/* Project Filter */}
           <div style={styles.filterGroup}>
             <label style={styles.filterLabel}>Project</label>
             <select
@@ -326,11 +341,7 @@ export default function MIRInboxPage() {
 
           <div style={styles.filterGroup}>
             <label style={styles.filterLabel}>&nbsp;</label>
-            <button
-              type="button"
-              onClick={handleApplyFilters}
-              style={styles.applyButton}
-            >
+            <button type="button" onClick={handleApplyFilters} style={styles.applyButton}>
               Apply Filters
             </button>
           </div>
@@ -342,16 +353,14 @@ export default function MIRInboxPage() {
         {loading ? (
           <div style={styles.loadingContainer}>
             <div style={styles.spinner}></div>
-            <p style={styles.loadingText}>Loading MIRs...</p>
+            <p style={styles.loadingText}>Loading {docType}s...</p>
           </div>
         ) : rows.length === 0 ? (
           <div style={styles.emptyState}>
             <div style={styles.emptyIcon}>📭</div>
-            <h3 style={styles.emptyTitle}>No MIRs Found</h3>
+            <h3 style={styles.emptyTitle}>No {docType}s Found</h3>
             <p style={styles.emptyText}>
-              {statusFilter || projectIdFilter
-                ? "Try adjusting your filters"
-                : "No MIRs are currently assigned to you"}
+              {statusFilter || projectIdFilter ? "Try adjusting your filters" : `No ${docType}s are currently assigned to you`}
             </p>
           </div>
         ) : (
@@ -359,7 +368,7 @@ export default function MIRInboxPage() {
             <table style={styles.table}>
               <thead>
                 <tr style={styles.tableHeaderRow}>
-                  <th style={styles.th}>MIR Number</th>
+                  <th style={styles.th}>{docType} Number</th>
                   <th style={styles.th}>Project</th>
                   <th style={styles.th}>Location</th>
                   <th style={styles.th}>Status</th>
@@ -370,93 +379,61 @@ export default function MIRInboxPage() {
               </thead>
               <tbody>
                 {rows.map((row, index) => {
-                  const projName =
-                    projectNameMap[String(row.project_id)] || null;
+                  const projName = projectNameMap[String(row.project_id)] || null;
 
                   return (
                     <tr
                       key={row.id}
                       style={{
                         ...styles.tableRow,
-                        background:
-                          index % 2 === 0 ? "#ffffff" : "#f9fafb",
+                        background: index % 2 === 0 ? "#ffffff" : "#f9fafb",
                       }}
                     >
-                      {/* MIR Number */}
                       <td style={styles.td}>
-                        <div style={styles.mirNumber}>
-                          #{row.mir_number || row.id}
-                        </div>
+                        <div style={styles.mirNumber}>#{getDocNumber(row)}</div>
                       </td>
 
-                      {/* Project */}
                       <td style={styles.td}>
                         <div style={styles.projectBadge}>
-                          {projName
-                            ? projName
-                            : row.project_id
-                            ? `Project ${row.project_id}`
-                            : "—"}
+                          {projName ? projName : row.project_id ? `Project ${row.project_id}` : "—"}
                         </div>
                       </td>
 
-                      {/* Location */}
                       <td style={styles.td}>
-                        <div style={styles.location}>
-                          {row.location || "—"}
-                        </div>
+                        <div style={styles.location}>{getDocLocation(row)}</div>
                       </td>
 
-                      {/* Status */}
                       <td style={styles.td}>
-                        <span style={getStatusStyle(row.status)}>
-                          {row.status || "N/A"}
-                        </span>
+                        <span style={getStatusStyle(row.status)}>{row.status || "N/A"}</span>
                       </td>
 
-                      {/* Created By */}
                       <td style={styles.td}>
-                        <div style={styles.createdBy}>
-                          {row.created_by_name || "—"}
-                        </div>
+                        <div style={styles.createdBy}>{row.created_by_name || "—"}</div>
                       </td>
 
-                      {/* Created Date */}
                       <td style={styles.td}>
                         <div style={styles.date}>
                           {row.created_at
-                            ? new Date(row.created_at).toLocaleDateString(
-                                "en-IN",
-                                {
-                                  day: "2-digit",
-                                  month: "short",
-                                  year: "numeric",
-                                }
-                              )
+                            ? new Date(row.created_at).toLocaleDateString("en-IN", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              })
                             : "—"}
                         </div>
                         <div style={styles.time}>
                           {row.created_at
-                            ? new Date(row.created_at).toLocaleTimeString(
-                                "en-IN",
-                                {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                }
-                              )
+                            ? new Date(row.created_at).toLocaleTimeString("en-IN", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
                             : ""}
                         </div>
                       </td>
 
-                      {/* Actions */}
                       <td style={styles.td}>
                         <div style={styles.actionsContainer}>
-                          <button
-                            type="button"
-                            onClick={() => handleView(row.id)}
-                            style={styles.viewButton}
-                            title="View Details"
-                          >
+                          <button type="button" onClick={() => handleView(row.id)} style={styles.viewButton}>
                             View
                           </button>
 
@@ -465,7 +442,6 @@ export default function MIRInboxPage() {
                             onClick={() => handleAccept(row)}
                             disabled={actionLoadingId === row.id}
                             style={styles.acceptButton}
-                            title="Accept MIR"
                           >
                             {actionLoadingId === row.id ? "..." : "✓ Accept"}
                           </button>
@@ -475,18 +451,12 @@ export default function MIRInboxPage() {
                             onClick={() => handleReject(row)}
                             disabled={actionLoadingId === row.id}
                             style={styles.rejectButton}
-                            title="Reject MIR"
                           >
                             {actionLoadingId === row.id ? "..." : "✕ Reject"}
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleForward(row)}
-                            style={styles.forwardButton}
-                            title="Forward to Another User"
-                          >
-                             Forward
+                          <button type="button" onClick={() => handleForward(row)} style={styles.forwardButton}>
+                            Forward
                           </button>
                         </div>
                       </td>
@@ -503,7 +473,7 @@ export default function MIRInboxPage() {
       {!loading && rows.length > 0 && (
         <div style={styles.footer}>
           <p style={styles.footerText}>
-            Showing <strong>{rows.length}</strong> MIR
+            Showing <strong>{rows.length}</strong> {docType}
             {rows.length !== 1 ? "s" : ""}
           </p>
         </div>
@@ -512,7 +482,7 @@ export default function MIRInboxPage() {
   );
 }
 
-// STYLES OBJECT
+// STYLES OBJECT (same as your current)
 const styles = {
   container: {
     maxWidth: "1400px",
@@ -560,7 +530,6 @@ const styles = {
     transition: "all 0.2s ease",
   },
 
-  // Stats Cards
   statsGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
@@ -591,7 +560,6 @@ const styles = {
     color: "#1e293b",
   },
 
-  // Filters
   filtersCard: {
     background: "white",
     padding: "20px",
@@ -656,16 +624,6 @@ const styles = {
     transition: "border-color 0.2s ease",
   },
 
-  filterInput: {
-    padding: "10px 12px",
-    border: "1px solid #e2e8f0",
-    borderRadius: "8px",
-    fontSize: "14px",
-    color: "#1e293b",
-    background: "white",
-    transition: "border-color 0.2s ease",
-  },
-
   applyButton: {
     padding: "10px 20px",
     background: "#10b981",
@@ -678,7 +636,6 @@ const styles = {
     transition: "all 0.2s ease",
   },
 
-  // Table
   tableCard: {
     background: "white",
     borderRadius: "12px",
@@ -819,7 +776,6 @@ const styles = {
     whiteSpace: "nowrap",
   },
 
-  // Loading State
   loadingContainer: {
     display: "flex",
     flexDirection: "column",
@@ -844,7 +800,6 @@ const styles = {
     fontWeight: "500",
   },
 
-  // Empty State
   emptyState: {
     textAlign: "center",
     padding: "60px 20px",
@@ -867,7 +822,6 @@ const styles = {
     color: "#64748b",
   },
 
-  // Footer
   footer: {
     marginTop: "20px",
     textAlign: "center",
@@ -879,7 +833,7 @@ const styles = {
   },
 };
 
-// Add CSS animation for spinner
+// spinner animation
 const styleSheet = document.styleSheets[0];
 if (styleSheet) {
   try {
@@ -890,7 +844,5 @@ if (styleSheet) {
       }`,
       styleSheet.cssRules.length
     );
-  } catch (e) {
-    // Animation already exists or error
-  }
+  } catch (e) {}
 }

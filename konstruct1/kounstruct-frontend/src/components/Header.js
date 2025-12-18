@@ -461,7 +461,7 @@ function Header() {
         >
           <span className="text-lg font-bold truncate pointer-events-none select-none">
             <h2 style={{ color: iconColor, margin: 0, userSelect: "none" }}>
-              🔗 Konstruct
+              Konstruct
             </h2>
           </span>
         </div>
@@ -478,7 +478,7 @@ function Header() {
             style={{ color: textColor, textDecoration: "none" }}
             title="Material Inspection Request"
           >
-            📦 MIR
+             MIR
           </NavLink>
 
           {/* 🔹 MIR Inbox */}
@@ -488,7 +488,7 @@ function Header() {
             style={{ color: textColor, textDecoration: "none" }}
             title="My MIR Inbox"
           >
-            📥 MIR Inbox
+             MIR Inbox
           </NavLink>
 
           {/* 🔹 Analytics (hidden for security guard + PM/Head) */}
@@ -503,7 +503,7 @@ function Header() {
               style={{ color: textColor, textDecoration: "none" }}
               title="Analytics Dashboard"
             >
-              📊 Analytics
+               Analytics
             </NavLink>
           )}
 
@@ -519,7 +519,7 @@ function Header() {
                   : "Project Forms"
               }
             >
-              📝 Forms
+               Forms
             </NavLink>
           )}
 
@@ -531,7 +531,7 @@ function Header() {
               style={{ color: textColor, textDecoration: "none" }}
               title="My Forms Inbox"
             >
-              📥 Forms Inbox
+               Forms Inbox
             </NavLink>
           )}
 

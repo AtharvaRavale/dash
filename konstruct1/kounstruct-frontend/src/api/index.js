@@ -644,15 +644,28 @@ export const getstageDetails = async (projectId) =>
   );
 
   
-export const getProjectUserDetails = async  =>
+// export const getProjectUserDetails = async  =>
+//   projectInstance.get(
+//     // `/user-stage-role/get-projects-by-user/?user_id=${userId}`,
+//     `/user-stage-role/get-projects-by-user/`,
+//     {
+//       headers: {
+//         "Content-Type": "application/json",
+//         "Authorization": `Bearer ${localStorage.getItem('ACCESS_TOKEN')}`,
+        
+//       },
+//     }
+//   );
+
+export const getProjectUserDetails = async () =>
   projectInstance.get(
-    // `/user-stage-role/get-projects-by-user/?user_id=${userId}`,
-    `/user-stage-role/get-projects-by-user/`,
+    "/user-stage-role/get-projects-by-user/",
     {
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${localStorage.getItem('ACCESS_TOKEN')}`,
-        
+        Authorization: `Bearer ${
+          localStorage.getItem("ACCESS_TOKEN") || localStorage.getItem("access")
+        }`,
       },
     }
   );
@@ -1785,4 +1798,150 @@ export const listFormTasks = (params = {}) =>
 export const updateFormResponse = (id, payload) =>
   axiosInstance.patch(`/forms/responses/${id}/`, payload, {
     headers: { "Content-Type": "application/json" },
+  });
+
+
+
+
+
+
+
+
+
+//wir
+// ==== WIR (Work Inspection Request) ====
+
+// Create WIR (basic JSON create)
+export const createWIR = async (data) =>
+  axiosInstance.post("/wir/", data, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// List WIRs
+export const listWIRs = async (params = {}) =>
+  axiosInstance.get("/wir/", {
+    params,
+    headers: { "Content-Type": "application/json" },
+  });
+
+// Get WIR by id
+export const getWIRById = async (id) =>
+  axiosInstance.get(`/wir/${id}/`, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// Update WIR
+export const updateWIR = async (id, data) =>
+  axiosInstance.patch(`/wir/${id}/`, data, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// Forward / Accept / Reject (same pattern as MIR)
+export const forwardWIR = async (id, payload) =>
+  axiosInstance.post(`/wir/${id}/forward/`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const acceptWIR = async (id, payload = {}) =>
+  axiosInstance.post(`/wir/${id}/accept/`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const rejectWIR = async (id, payload = {}) =>
+  axiosInstance.post(`/wir/${id}/reject/`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// Two signatures only
+export const signWIRContractor = (wirId, { name, sign_date, file }) => {
+  const fd = new FormData();
+  if (file) fd.append("signature", file);
+  if (name) fd.append("name", name);
+  if (sign_date) fd.append("sign_date", sign_date);
+
+  return axiosInstance.post(`/wir/${wirId}/sign_contractor/`, fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+export const signWIRInspector = (wirId, { name, sign_date, file }) => {
+  const fd = new FormData();
+  if (file) fd.append("signature", file);
+  if (name) fd.append("name", name);
+  if (sign_date) fd.append("sign_date", sign_date);
+
+  return axiosInstance.post(`/wir/${wirId}/sign_inspector/`, fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+// Full create (data JSON + files)
+export function createWIRFull(formData) {
+  return axiosInstance.post("/wir/full-create/", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+}
+
+
+
+
+
+
+// ==== WIR (Work Inspection Request) ====
+
+// List my assigned WIRs (same pattern as MIR)
+export const getMyAssignedWIRs = (params = {}) =>
+  axiosInstance.get("/wir/", {
+    params: { only_assigned: 1, ...params },
+  });
+
+
+
+
+
+  // ==== WIR ====
+
+
+
+export const uploadWIRAttachments = (id, formData) =>
+  axiosInstance.post(`/wir/${id}/attachments/`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+
+
+export const signWIRStore = (id, { name, sign_date, file }) => {
+  const fd = new FormData();
+  if (name) fd.append("name", name);
+  if (sign_date) fd.append("sign_date", sign_date);
+  fd.append("file", file);
+  return axiosInstance.post(`/wir/${id}/sign-store/`, fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+export const signWIRQc = (id, { name, sign_date, file }) => {
+  const fd = new FormData();
+  if (name) fd.append("name", name);
+  if (sign_date) fd.append("sign_date", sign_date);
+  fd.append("file", file);
+  return axiosInstance.post(`/wir/${id}/sign-qc/`, fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+export const signWIRProjectIncharge = (id, { name, sign_date, file }) => {
+  const fd = new FormData();
+  if (name) fd.append("name", name);
+  if (sign_date) fd.append("sign_date", sign_date);
+  fd.append("file", file);
+  return axiosInstance.post(`/wir/${id}/sign-project-incharge/`, fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
+// ✅ One endpoint, 3 fields supported: client_logo / pmc_logo / contractor_logo
+export const uploadWIRLogos = (id, formData) =>
+  axiosInstance.post(`/wir/${id}/logos/`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
