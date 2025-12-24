@@ -10,6 +10,66 @@ import { organnizationInstance } from "./axiosInstance"
 const __isLoggingOut = () => localStorage.getItem("__LOGGING_OUT__") === "1";
 const __hasAccess = () => !!localStorage.getItem("ACCESS_TOKEN");
 
+
+// helper: get root domain from axiosInstance baseURL safely
+const __getApiRoot = () => {
+  try {
+    const rawBase = axiosInstance?.defaults?.baseURL || "";
+    // rawBase could be: "https://konstruct.world/api" OR "/api" OR "https://konstruct.world/users"
+    const u = new URL(rawBase, window.location.origin);
+
+    // remove trailing "/api" or "/users" if present
+    u.pathname = u.pathname.replace(/\/(api|users)\/?$/, "/");
+    const root = (u.origin + u.pathname).replace(/\/$/, "");
+    return root || window.location.origin;
+  } catch (e) {
+    return window.location.origin;
+  }
+};
+
+// helper: try multiple URLs (useful when env/baseURL differs)
+const __postMultipartWithFallback = async (instance, urlList, formData, config = {}) => {
+  let lastErr = null;
+
+  for (const url of urlList) {
+    try {
+      // NOTE: Do NOT force Content-Type; let browser/axios set multipart boundary
+      return await instance.post(url, formData, config);
+    } catch (err) {
+      lastErr = err;
+      const status = err?.response?.status;
+
+      // only fallback on 404 (route not found). Other errors should stop.
+      if (status && status !== 404) throw err;
+
+      // if no response (network error), also stop
+      if (!err?.response) throw err;
+    }
+  }
+
+  throw lastErr;
+};
+
+export function downloadBlob(blob, filename = "file.pdf") {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+export function filenameFromDisposition(disposition) {
+  if (!disposition) return null;
+  // attachment; filename="WIR_123.pdf"
+  const m = /filename\*=UTF-8''([^;]+)|filename="([^"]+)"|filename=([^;]+)/i.exec(disposition);
+  const name = (m && (m[1] || m[2] || m[3])) ? decodeURIComponent(m[1] || m[2] || m[3]) : "";
+  return (name || "").trim() || null;
+}
+
+
 export const login = async (data) =>
   axiosInstance.post("/token/", data, {
     headers: {
@@ -1853,27 +1913,77 @@ export const rejectWIR = async (id, payload = {}) =>
   });
 
 // Two signatures only
+// export const signWIRContractor = (wirId, { name, sign_date, file }) => {
+//   const fd = new FormData();
+//   if (file) fd.append("signature", file);
+//   if (name) fd.append("name", name);
+//   if (sign_date) fd.append("sign_date", sign_date);
+
+//   return axiosInstance.post(`/wir/${wirId}/sign_contractor/`, fd, {
+//     headers: { "Content-Type": "multipart/form-data" },
+//   });
+// };
 export const signWIRContractor = (wirId, { name, sign_date, file }) => {
   const fd = new FormData();
-  if (file) fd.append("signature", file);
+
+  // backend commonly expects "signature"
+  if (file) {
+    const filename = typeof file?.name === "string" ? file.name : "signature.png";
+    fd.append("signature", file, filename);
+
+    // (safe fallback) some backends may expect "file"
+    // will not break if ignored
+    fd.append("file", file, filename);
+  }
+
   if (name) fd.append("name", name);
   if (sign_date) fd.append("sign_date", sign_date);
 
-  return axiosInstance.post(`/wir/${wirId}/sign_contractor/`, fd, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  const root = __getApiRoot();
+
+  // ✅ try absolute routes first (bypass axios baseURL /api)
+  const urls = [
+    `${root}/users/wir/${wirId}/sign-contractor/`,
+    `${root}/api/wir/${wirId}/sign-contractor/`, // just in case
+    `/wir/${wirId}/sign-contractor/`,            // if axios baseURL already /users
+  ];
+
+  return __postMultipartWithFallback(axiosInstance, urls, fd);
 };
 
 export const signWIRInspector = (wirId, { name, sign_date, file }) => {
   const fd = new FormData();
-  if (file) fd.append("signature", file);
+
+  if (file) {
+    const filename = typeof file?.name === "string" ? file.name : "signature.png";
+    fd.append("signature", file, filename);
+    fd.append("file", file, filename); // fallback
+  }
+
   if (name) fd.append("name", name);
   if (sign_date) fd.append("sign_date", sign_date);
 
-  return axiosInstance.post(`/wir/${wirId}/sign_inspector/`, fd, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  const root = __getApiRoot();
+
+  const urls = [
+    `${root}/users/wir/${wirId}/sign-inspector/`,
+    `${root}/api/wir/${wirId}/sign-inspector/`,
+    `/wir/${wirId}/sign-inspector/`,
+  ];
+
+  return __postMultipartWithFallback(axiosInstance, urls, fd);
 };
+
+// export const signWIRInspector = (wirId, { name, sign_date, file }) => {
+//   const fd = new FormData();
+//   if (file) fd.append("signature", file);
+//   if (name) fd.append("name", name);
+//   if (sign_date) fd.append("sign_date", sign_date);
+
+//   return axiosInstance.post(`/wir/${wirId}/sign_inspector/`, fd, {
+//     headers: { "Content-Type": "multipart/form-data" },
+//   });
+// };
 
 // Full create (data JSON + files)
 export function createWIRFull(formData) {
@@ -1945,3 +2055,33 @@ export const uploadWIRLogos = (id, formData) =>
   axiosInstance.post(`/wir/${id}/logos/`, formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+
+
+
+
+
+
+
+
+
+export const exportWIRPdf = async (wirId, includeAttachments = true) => {
+  const res = await axiosInstance.get(`/wir/${wirId}/export-pdf/`, {
+    params: { include_attachments: includeAttachments ? 1 : 0 },
+    responseType: "blob",
+  });
+
+  // agar backend error JSON bhej de blob me
+  const contentType = res.headers?.["content-type"] || "";
+  if (contentType.includes("application/json")) {
+    const text = await res.data.text();
+    let msg = "Export failed";
+    try { msg = JSON.parse(text)?.detail || msg; } catch {}
+    throw new Error(msg);
+  }
+
+  const dispo = res.headers?.["content-disposition"];
+  const filename = filenameFromDisposition(dispo) || `WIR_${wirId}.pdf`;
+  downloadBlob(res.data, filename);
+
+  return true;
+};

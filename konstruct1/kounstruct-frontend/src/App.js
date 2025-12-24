@@ -303,6 +303,8 @@ function AppRoutes() {
         <Route path="/mir/:id" element={<MIRDetailPage />} />
         <Route path="/mir/inbox" element={<MIRInboxPage />} />
         <Route path="/wir/create" element={<WIRCreatePage />} />
+        <Route path="/wir/inbox" element={<Navigate to="/mir/inbox" replace />} />
+
         <Route path="/wir/:id" element={<WIRDetailPage />} />
 
         

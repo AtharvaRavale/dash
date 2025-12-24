@@ -99,10 +99,24 @@ export default function MIRInboxPage() {
   const getRejectApi = () => (docType === "WIR" ? rejectWIR : rejectMIR);
 
   const getDocNumber = (row) => {
-    if (!row) return "—";
-    if (docType === "WIR") return row.wir_number || row.id;
-    return row.mir_number || row.id;
-  };
+  if (!row) return "—";
+  if (docType === "WIR") return row.inspection_request_no || row.id; // ✅ FIX
+  return row.mir_number || row.id;
+};
+const getDecisionDisplay = (row) => {
+  if (!row) return "—";
+
+  // best: backend already sends
+  if (row.decision_display) return row.decision_display;
+
+  // fallback: decision + label
+  const code = row.decision || "";
+  const label = row.decision_label || "";
+  if (code && label) return `${code} - ${label}`;
+
+  return code || "—";
+};
+
 
   const getDocLocation = (row) => row?.location || row?.location_gridlines || row?.zone_area || "—";
 
@@ -128,12 +142,12 @@ export default function MIRInboxPage() {
     else navigate(`/mir/${id}`);
   };
 
-  const handleApplyFilters = () => {
-    const params = {};
-    if (statusFilter) params.status = statusFilter;
-    if (projectIdFilter) params.project_id = projectIdFilter;
-    fetchList(params);
-  };
+ const handleApplyFilters = () => {
+  const params = {};
+  if (docType !== "WIR" && statusFilter) params.status = statusFilter; // ✅
+  if (projectIdFilter) params.project_id = projectIdFilter;
+  fetchList(params);
+};
 
   const handleClearFilters = (silent = false) => {
     setStatusFilter("");
@@ -219,18 +233,47 @@ export default function MIRInboxPage() {
         return { ...baseStyle, background: "#f3f4f6", color: "#374151" };
       case "CLOSED":
         return { ...baseStyle, background: "#e5e7eb", color: "#1f2937" };
+      case "COMPLETED":
+        return { ...baseStyle, background: "#d1fae5", color: "#065f46" };
+
       default:
         return { ...baseStyle, background: "#f3f4f6", color: "#6b7280" };
     }
   };
 
   // Stats calculation
-  const stats = {
-    total: rows.length,
-    pending: rows.filter((r) => r.status === "PENDING").length,
-    approved: rows.filter((r) => r.status === "APPROVED" || r.status === "ACCEPTED").length,
-    rejected: rows.filter((r) => r.status === "REJECTED").length,
-  };
+  const stats =
+  docType === "WIR"
+    ? { total: rows.length }
+    : {
+        total: rows.length,
+        pending: rows.filter((r) => r.status === "PENDING").length,
+        approved: rows.filter((r) => r.status === "APPROVED" || r.status === "ACCEPTED").length,
+        rejected: rows.filter((r) => r.status === "REJECTED").length,
+      };
+<div style={styles.statsGrid}>
+  <div style={{ ...styles.statCard, background: cardBg, borderLeft: `4px solid ${ORANGE}` }}>
+    <div style={styles.statLabel}>Total {docType}s</div>
+    <div style={styles.statValue}>{stats.total}</div>
+  </div>
+
+  {docType !== "WIR" && (
+    <>
+      <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #f59e0b" }}>
+        <div style={styles.statLabel}>Pending Review</div>
+        <div style={styles.statValue}>{stats.pending}</div>
+      </div>
+      <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #10b981" }}>
+        <div style={styles.statLabel}>Approved</div>
+        <div style={styles.statValue}>{stats.approved}</div>
+      </div>
+      <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #ef4444" }}>
+        <div style={styles.statLabel}>Rejected</div>
+        <div style={styles.statValue}>{stats.rejected}</div>
+      </div>
+    </>
+  )}
+</div>
 
   const headerTitle =
     docType === "WIR" ? "Work Inspection Requests" : "Material Inspection Requests";
@@ -274,23 +317,31 @@ export default function MIRInboxPage() {
 
       {/* Stats Cards */}
       <div style={styles.statsGrid}>
-        <div style={{ ...styles.statCard, background: cardBg, borderLeft: `4px solid ${ORANGE}` }}>
-          <div style={styles.statLabel}>Total {docType}s</div>
-          <div style={styles.statValue}>{stats.total}</div>
-        </div>
-        <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #f59e0b" }}>
-          <div style={styles.statLabel}>Pending Review</div>
-          <div style={styles.statValue}>{stats.pending}</div>
-        </div>
-        <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #10b981" }}>
-          <div style={styles.statLabel}>Approved</div>
-          <div style={styles.statValue}>{stats.approved}</div>
-        </div>
-        <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #ef4444" }}>
-          <div style={styles.statLabel}>Rejected</div>
-          <div style={styles.statValue}>{stats.rejected}</div>
-        </div>
+  <div style={{ ...styles.statCard, background: cardBg, borderLeft: `4px solid ${ORANGE}` }}>
+    <div style={styles.statLabel}>Total {docType}s</div>
+    <div style={styles.statValue}>{stats.total}</div>
+  </div>
+
+  {docType !== "WIR" && (
+    <>
+      <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #f59e0b" }}>
+        <div style={styles.statLabel}>Pending Review</div>
+        <div style={styles.statValue}>{stats.pending}</div>
       </div>
+
+      <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #10b981" }}>
+        <div style={styles.statLabel}>Approved</div>
+        <div style={styles.statValue}>{stats.approved}</div>
+      </div>
+
+      <div style={{ ...styles.statCard, background: cardBg, borderLeft: "4px solid #ef4444" }}>
+        <div style={styles.statLabel}>Rejected</div>
+        <div style={styles.statValue}>{stats.rejected}</div>
+      </div>
+    </>
+  )}
+</div>
+
 
       {/* Filters Section */}
       <div style={{ ...styles.filtersCard, background: cardBg }}>
@@ -305,22 +356,25 @@ export default function MIRInboxPage() {
 
         <div style={styles.filtersGrid}>
           {/* Status Filter */}
-          <div style={styles.filterGroup}>
-            <label style={styles.filterLabel}>Status</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              style={styles.filterSelect}
-            >
-              <option value="">All Statuses</option>
-              <option value="DRAFT">Draft</option>
-              <option value="PENDING">Pending</option>
-              <option value="UNDER_REVIEW">Under Review</option>
-              <option value="APPROVED">Approved</option>
-              <option value="REJECTED">Rejected</option>
-              <option value="CLOSED">Closed</option>
-            </select>
-          </div>
+          {docType !== "WIR" && (
+  <div style={styles.filterGroup}>
+    <label style={styles.filterLabel}>Status</label>
+    <select
+      value={statusFilter}
+      onChange={(e) => setStatusFilter(e.target.value)}
+      style={styles.filterSelect}
+    >
+      <option value="">All Statuses</option>
+      <option value="DRAFT">Draft</option>
+      <option value="PENDING">Pending</option>
+      <option value="UNDER_REVIEW">Under Review</option>
+      <option value="APPROVED">Approved</option>
+      <option value="REJECTED">Rejected</option>
+      <option value="CLOSED">Closed</option>
+    </select>
+  </div>
+)}
+
 
           {/* Project Filter */}
           <div style={styles.filterGroup}>
@@ -371,7 +425,11 @@ export default function MIRInboxPage() {
                   <th style={styles.th}>{docType} Number</th>
                   <th style={styles.th}>Project</th>
                   <th style={styles.th}>Location</th>
-                  <th style={styles.th}>Status</th>
+{docType !== "WIR" && <th style={styles.th}>Status</th>}   {/* ✅ only MIR */}
+
+{docType === "WIR" && <th style={styles.th}>Decision</th>}
+                  {/* {docType === "WIR" && <th style={styles.th}>Decision</th>} ✅ NEW */}
+
                   <th style={styles.th}>Created By</th>
                   <th style={styles.th}>Created Date</th>
                   <th style={styles.th}>Actions</th>
@@ -403,9 +461,20 @@ export default function MIRInboxPage() {
                         <div style={styles.location}>{getDocLocation(row)}</div>
                       </td>
 
-                      <td style={styles.td}>
-                        <span style={getStatusStyle(row.status)}>{row.status || "N/A"}</span>
-                      </td>
+                      
+
+{docType !== "WIR" ? (
+  <td style={styles.td}>
+    <span style={getStatusStyle(row.status)}>{row.status || "N/A"}</span>
+  </td>
+) : (
+  <td style={styles.td}>
+    <div style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>
+      {getDecisionDisplay(row)}
+    </div>
+  </td>
+)}
+
 
                       <td style={styles.td}>
                         <div style={styles.createdBy}>{row.created_by_name || "—"}</div>
@@ -432,34 +501,47 @@ export default function MIRInboxPage() {
                       </td>
 
                       <td style={styles.td}>
-                        <div style={styles.actionsContainer}>
-                          <button type="button" onClick={() => handleView(row.id)} style={styles.viewButton}>
-                            View
-                          </button>
+  <div style={styles.actionsContainer}>
+    <button
+      type="button"
+      onClick={() => handleView(row.id)}
+      style={styles.viewButton}
+    >
+      View
+    </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleAccept(row)}
-                            disabled={actionLoadingId === row.id}
-                            style={styles.acceptButton}
-                          >
-                            {actionLoadingId === row.id ? "..." : "✓ Accept"}
-                          </button>
+    {docType !== "WIR" && (
+      <>
+        <button
+          type="button"
+          onClick={() => handleAccept(row)}
+          disabled={actionLoadingId === row.id}
+          style={styles.acceptButton}
+        >
+          {actionLoadingId === row.id ? "..." : "✓ Accept"}
+        </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleReject(row)}
-                            disabled={actionLoadingId === row.id}
-                            style={styles.rejectButton}
-                          >
-                            {actionLoadingId === row.id ? "..." : "✕ Reject"}
-                          </button>
+        <button
+          type="button"
+          onClick={() => handleReject(row)}
+          disabled={actionLoadingId === row.id}
+          style={styles.rejectButton}
+        >
+          {actionLoadingId === row.id ? "..." : "✕ Reject"}
+        </button>
 
-                          <button type="button" onClick={() => handleForward(row)} style={styles.forwardButton}>
-                            Forward
-                          </button>
-                        </div>
-                      </td>
+        <button
+          type="button"
+          onClick={() => handleForward(row)}
+          style={styles.forwardButton}
+        >
+          Forward
+        </button>
+      </>
+    )}
+  </div>
+</td>
+
                     </tr>
                   );
                 })}

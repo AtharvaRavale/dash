@@ -64,27 +64,105 @@ const DECISIONS = [
 ];
 
 // small helper for file preview url (auto revoke)
+// small helper for file preview url (auto revoke)
 function useObjectUrl(file) {
   const [url, setUrl] = useState("");
+
   useEffect(() => {
     if (!file) {
       setUrl("");
       return;
     }
-    const u = URL.createObjectURL(file);
-    setUrl(u);
-    return () => URL.revokeObjectURL(u);
+
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+
+    return () => URL.revokeObjectURL(objectUrl);
   }, [file]);
+
   return url;
 }
 
-function LogoCircle({ url, fallbackText }) {
+function LogoAdjustControls({ value, onChange }) {
+  const v = { scale: 1, x: 0, y: 0, fit: "contain", ...(value || {}) };
+
+  return (
+    <div style={{ marginTop: 8, padding: 10, border: "1px dashed #999", borderRadius: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8 }}>Adjust Logo</div>
+
+      <label style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
+        Fit:&nbsp;
+        <select
+          value={v.fit}
+          onChange={(e) => onChange({ ...v, fit: e.target.value })}
+          style={{ padding: 6, border: "1px solid #ccc", borderRadius: 6 }}
+        >
+          <option value="contain">Contain</option>
+          <option value="cover">Cover</option>
+        </select>
+      </label>
+
+      <label style={{ fontSize: 12, display: "block" }}>
+        Zoom: {v.scale}
+        <input
+          type="range"
+          min="0.6"
+          max="2.5"
+          step="0.05"
+          value={v.scale}
+          onChange={(e) => onChange({ ...v, scale: Number(e.target.value) })}
+          style={{ width: "100%" }}
+        />
+      </label>
+
+      <label style={{ fontSize: 12, display: "block", marginTop: 8 }}>
+        Move X: {v.x}px
+        <input
+          type="range"
+          min="-60"
+          max="60"
+          step="1"
+          value={v.x}
+          onChange={(e) => onChange({ ...v, x: Number(e.target.value) })}
+          style={{ width: "100%" }}
+        />
+      </label>
+
+      <label style={{ fontSize: 12, display: "block", marginTop: 8 }}>
+        Move Y: {v.y}px
+        <input
+          type="range"
+          min="-60"
+          max="60"
+          step="1"
+          value={v.y}
+          onChange={(e) => onChange({ ...v, y: Number(e.target.value) })}
+          style={{ width: "100%" }}
+        />
+      </label>
+
+      <button
+        type="button"
+        onClick={() => onChange({ scale: 1, x: 0, y: 0, fit: "contain" })}
+        style={{ marginTop: 10, padding: 8, border: "none", borderRadius: 6, background: "#eee", cursor: "pointer", fontWeight: 800 }}
+      >
+        Reset
+      </button>
+    </div>
+  );
+}
+
+const DEFAULT_LOGO_ADJ = { scale: 1, x: 0, y: 0, fit: "contain" };
+
+function LogoRect({ url, fallbackText, adj = DEFAULT_LOGO_ADJ, width = 140, height = 70 }) {
+  const a = { ...DEFAULT_LOGO_ADJ, ...(adj || {}) };
+
   return (
     <div
       style={{
-        width: 90,
-        height: 90,
-        borderRadius: "50%",
+        width,
+        height,
+        borderRadius: 8,          // ✅ rectangle (no circle)
         border: "2px solid #000",
         overflow: "hidden",
         display: "flex",
@@ -95,15 +173,27 @@ function LogoCircle({ url, fallbackText }) {
       }}
     >
       {url ? (
-        <img src={url} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <img
+          src={url}
+          alt="logo"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: a.fit, // contain | cover
+            transform: `translate(${a.x}px, ${a.y}px) scale(${a.scale})`,
+            transformOrigin: "center",
+            display: "block",
+          }}
+        />
       ) : (
-        <div style={{ fontWeight: "bold", fontSize: 16, color: "#444", textAlign: "center", whiteSpace: "pre-line" }}>
+        <div style={{ fontWeight: "bold", fontSize: 14, color: "#444", textAlign: "center", whiteSpace: "pre-line" }}>
           {fallbackText}
         </div>
       )}
     </div>
   );
 }
+
 
 export default function WIRCreatePage() {
   const navigate = useNavigate();
@@ -123,6 +213,11 @@ export default function WIRCreatePage() {
   const [clientLogoFile, setClientLogoFile] = useState(null);
   const [pmcLogoFile, setPmcLogoFile] = useState(null);
   const [contractorLogoFile, setContractorLogoFile] = useState(null);
+const [logoAdj, setLogoAdj] = useState({
+  client: { scale: 1, x: 0, y: 0, fit: "contain" },
+  pmc: { scale: 1, x: 0, y: 0, fit: "contain" },
+  contractor: { scale: 1, x: 0, y: 0, fit: "contain" },
+});
 
   const clientLogoUrl = useObjectUrl(clientLogoFile);
   const pmcLogoUrl = useObjectUrl(pmcLogoFile);
@@ -283,6 +378,8 @@ export default function WIRCreatePage() {
     extra.wir_title = form.wir_title || "";
     extra.request_note = form.request_note || "";
     extra.contractor_required_actions = form.contractor_required_actions || "";
+    extra.logo_adjustments = logoAdj;
+
 
     // ✅ plus modular extra fields
     extraFields.forEach((row) => {
@@ -481,21 +578,18 @@ export default function WIRCreatePage() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             {/* LEFT: Client/Company logo + text */}
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <LogoCircle url={clientLogoUrl} fallbackText={"Client /\nCompany\nLogo"} />
-              <div style={{ fontWeight: "bold", lineHeight: 1.1 }}>
-                <div style={{ fontSize: 26, letterSpacing: 1 }}>HORIZON</div>
-                <div style={{ fontSize: 14, letterSpacing: 1 }}>INDUSTRIAL PARKS</div>
-              </div>
+<LogoRect url={clientLogoUrl} fallbackText={"Client /\nCompany\nLogo"} adj={logoAdj.client} width={140} height={70} />
+              
             </div>
 
             {/* CENTER: PMC logo */}
             <div style={{ textAlign: "center" }}>
-              <LogoCircle url={pmcLogoUrl} fallbackText={"PMC's\nLogo"} />
+<LogoRect url={pmcLogoUrl} fallbackText={"PMC's\nLogo"} adj={logoAdj.pmc} width={140} height={70} />
             </div>
 
             {/* RIGHT: Contractor logo */}
             <div style={{ textAlign: "center" }}>
-              <LogoCircle url={contractorLogoUrl} fallbackText={"Contractor's\nLogo"} />
+<LogoRect url={contractorLogoUrl} fallbackText={"Contractor's\nLogo"} adj={logoAdj.contractor} width={140} height={70} />
             </div>
           </div>
         </div>
@@ -586,30 +680,48 @@ export default function WIRCreatePage() {
                   Client/Company Logo (left)
                 </label>
                 <input type="file" accept="image/*" onChange={(e) => setClientLogoFile(e.target.files?.[0] || null)} />
+                   <LogoAdjustControls
+  value={logoAdj.client}
+  onChange={(v) => setLogoAdj((p) => ({ ...p, client: v }))}
+/>
                 {clientLogoFile && (
                   <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>Selected: {clientLogoFile.name}</div>
                 )}
               </div>
+           
+
 
               <div>
                 <label style={{ fontWeight: "bold", display: "block", marginBottom: 6 }}>
                   PMC Logo (center)
                 </label>
                 <input type="file" accept="image/*" onChange={(e) => setPmcLogoFile(e.target.files?.[0] || null)} />
+                  <LogoAdjustControls
+  value={logoAdj.pmc}
+  onChange={(v) => setLogoAdj((p) => ({ ...p, pmc: v }))}
+/>
                 {pmcLogoFile && (
                   <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>Selected: {pmcLogoFile.name}</div>
                 )}
               </div>
+            
+
 
               <div>
                 <label style={{ fontWeight: "bold", display: "block", marginBottom: 6 }}>
                   Contractor Logo (right)
                 </label>
                 <input type="file" accept="image/*" onChange={(e) => setContractorLogoFile(e.target.files?.[0] || null)} />
+                  <LogoAdjustControls
+  value={logoAdj.contractor}
+  onChange={(v) => setLogoAdj((p) => ({ ...p, contractor: v }))}
+/>
                 {contractorLogoFile && (
                   <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>Selected: {contractorLogoFile.name}</div>
                 )}
               </div>
+            
+
             </div>
 
             <div style={{ marginBottom: "12px" }}>

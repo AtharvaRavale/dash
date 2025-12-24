@@ -4,6 +4,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useTheme } from "../ThemeContext";
 import SignaturePadField from "../components/SignaturePadField";
+import { exportWIRPdf } from "../api";
 
 import {
   getWIRById,
@@ -44,6 +45,13 @@ const fmtDDMonYYYY = (dateStr) => {
 };
 
 const safeStr = (v) => (v === null || v === undefined ? "" : String(v));
+
+const sanitizeFileName = (name) =>
+  String(name || "document")
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .slice(0, 160);
 
 const RESERVED_EXTRA_KEYS = new Set([
   "project_display_name",
@@ -121,12 +129,11 @@ function Box({ checked }) {
         alignItems: "center",
         justifyContent: "center",
         marginRight: 8,
-        background: checked ? "#000" : "transparent",
+        background: "#fff",
+        lineHeight: 1,
       }}
     >
-      {checked ? (
-        <span style={{ width: 8, height: 8, background: "#fff" }} />
-      ) : null}
+      {checked ? <span style={{ fontSize: 12, fontWeight: 900 }}>✓</span> : null}
     </span>
   );
 }
@@ -270,6 +277,9 @@ const txtAreaSmall = {
 const chkRow = { display: "flex", alignItems: "center", marginBottom: 6 };
 const chkText = { fontSize: 11, fontWeight: 800 };
 
+// ✅ NEW: categories list for sheet upload UI
+const SHEET_CATS = ["KEY_PLAN", "CHECKLIST", "CLEARANCE", "DRAWING", "OTHER"];
+
 export default function WIRDetailPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -285,6 +295,9 @@ export default function WIRDetailPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // ✅ PDF download loading
+  const [pdfLoading, setPdfLoading] = useState(false);
+
   // project list (for editing project_id)
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projects, setProjects] = useState([]);
@@ -294,16 +307,63 @@ export default function WIRDetailPage() {
   const [selectedForwardUserId, setSelectedForwardUserId] = useState("");
   const [forwardComment, setForwardComment] = useState("");
 
-  // attachments upload state
+  // attachments upload state (existing bottom card)
   const [uploadCategory, setUploadCategory] = useState("KEY_PLAN");
   const [attachmentsFiles, setAttachmentsFiles] = useState([]);
   const [attachmentName, setAttachmentName] = useState("");
   const [attachmentDescription, setAttachmentDescription] = useState("");
 
+  // ✅ NEW: reset key for bottom card file input
+  const [attInputKey, setAttInputKey] = useState(0);
+
+  // ✅ NEW: per-category upload state INSIDE SHEET (edit mode)
+  const makeEmptySheetUploads = () =>
+    SHEET_CATS.reduce((acc, cat) => {
+      acc[cat] = { files: [], name: "", description: "", inputKey: 0 };
+      return acc;
+    }, {});
+  const [sheetUploads, setSheetUploads] = useState(() => makeEmptySheetUploads());
+
+  const setSheetFiles = (cat, filesArr) => {
+    setSheetUploads((prev) => ({
+      ...prev,
+      [cat]: { ...prev[cat], files: filesArr || [] },
+    }));
+  };
+  const setSheetMeta = (cat, field, value) => {
+    setSheetUploads((prev) => ({
+      ...prev,
+      [cat]: { ...prev[cat], [field]: value },
+    }));
+  };
+  const resetSheetCat = (cat) => {
+    setSheetUploads((prev) => ({
+      ...prev,
+      [cat]: { files: [], name: "", description: "", inputKey: (prev[cat]?.inputKey || 0) + 1 },
+    }));
+  };
+  const resetAllSheetUploads = () => {
+    setSheetUploads((prev) => {
+      const next = { ...prev };
+      SHEET_CATS.forEach((cat) => {
+        next[cat] = { files: [], name: "", description: "", inputKey: (prev[cat]?.inputKey || 0) + 1 };
+      });
+      return next;
+    });
+  };
+
   // logos (update)
   const [clientLogoFile, setClientLogoFile] = useState(null);
   const [pmcLogoFile, setPmcLogoFile] = useState(null);
   const [contractorLogoFile, setContractorLogoFile] = useState(null);
+  const DEFAULT_LOGO_ADJ = { scale: 1, x: 0, y: 0, fit: "contain" };
+
+const [logoAdj, setLogoAdj] = useState({
+  client: { ...DEFAULT_LOGO_ADJ },
+  pmc: { ...DEFAULT_LOGO_ADJ },
+  contractor: { ...DEFAULT_LOGO_ADJ },
+});
+
 
   // signatures update (2)
   const [contractorSignFile, setContractorSignFile] = useState(null);
@@ -348,6 +408,12 @@ export default function WIRDetailPage() {
       setWir(data);
 
       const extra = isObj(data?.extra_data) ? data.extra_data : {};
+      setLogoAdj({
+  client: data?.extra_data?.logo_adjustments?.client || { ...DEFAULT_LOGO_ADJ },
+  pmc: data?.extra_data?.logo_adjustments?.pmc || { ...DEFAULT_LOGO_ADJ },
+  contractor: data?.extra_data?.logo_adjustments?.contractor || { ...DEFAULT_LOGO_ADJ },
+});
+
 
       // forward users
       if (data?.project_id) {
@@ -389,10 +455,7 @@ export default function WIRDetailPage() {
           safeStr(data.project_name) ||
           safeStr(data.project?.name),
 
-        wir_title:
-          safeStr(extra.wir_title) ||
-          safeStr(data.wir_title) ||
-          "WORK INSPECTION REQUEST (WIR)",
+        wir_title: safeStr(extra.wir_title) || safeStr(data.wir_title) || "WORK INSPECTION REQUEST (WIR)",
 
         date_of_submission: isoDateOnly(data.date_of_submission || data.created_at),
         inspection_request_no: safeStr(data.inspection_request_no),
@@ -426,6 +489,9 @@ export default function WIRDetailPage() {
         inspector_sign_date: isoDateOnly(data.inspector_sign_date),
       });
 
+      // ✅ safe: whenever detail reloads, clear sheet upload selections
+      setSheetUploads(makeEmptySheetUploads());
+
       if (initialMode === "edit") setIsEditing(true);
     } catch (err) {
       console.error("Failed to load WIR detail", err);
@@ -434,24 +500,56 @@ export default function WIRDetailPage() {
       setLoading(false);
     }
   };
+//   const decisionLabel = useMemo(() => {
+//   const d = DECISIONS.find((x) => x.value === decision);
+//   if (!d || d.value === "NONE") return "";
+//   return d.label; // e.g. "B - Proceed With Works As Noted Above"
+// }, [decision]);
 
-  const attachmentsByCategory = useMemo(
-    () => groupAttachmentsByCategory(wir?.attachments || []),
-    [wir]
-  );
+
+  const attachmentsByCategory = useMemo(() => groupAttachmentsByCategory(wir?.attachments || []), [wir]);
+// ✅ Decision value + label (SAFE, no TDZ, hooks order ok)
+const decisionValue = useMemo(
+  () => safeStr(editForm?.decision || "NONE").toUpperCase(),
+  [editForm?.decision]
+);
+
+const decisionLabel = useMemo(() => {
+  const d = DECISIONS.find((x) => x.value === decisionValue);
+  return d && d.value !== "NONE" ? d.label : "";
+}, [decisionValue]);
 
   const handleBack = () => navigate("/wir/inbox");
 
   const toggleEdit = () => {
     setIsEditing((prev) => {
       const next = !prev;
+
+      if (prev === false && next === true) {
+        // entering edit mode: clear temp uploads
+        setAttachmentsFiles([]);
+        setAttachmentName("");
+        setAttachmentDescription("");
+        setAttInputKey((k) => k + 1);
+        resetAllSheetUploads();
+      }
+
       if (prev === true && next === false) {
         // cancel edit -> discard changes
+        setAttachmentsFiles([]);
+        setAttachmentName("");
+        setAttachmentDescription("");
+        setAttInputKey((k) => k + 1);
+
+        resetAllSheetUploads();
         fetchDetail();
       }
+
       return next;
     });
   };
+  // console.log("WIR ID param:", id);
+
 
   const handleEditChange = (e) => {
     const { name, type } = e.target;
@@ -471,23 +569,25 @@ export default function WIRDetailPage() {
   const removeExtraRow = (idx) => setExtraRows((p) => p.filter((_, i) => i !== idx));
 
   const buildExtraDataPayload = () => {
-    const obj = {
-      project_display_name: editForm?.project_display_name || "",
-      wir_title: editForm?.wir_title || "",
-      request_note: editForm?.request_note || "",
-      contractor_required_actions: editForm?.contractor_required_actions || "",
-    };
-
-    (extraRows || []).forEach((r) => {
-      const k = (r.key || "").trim();
-      if (!k) return;
-      if (RESERVED_EXTRA_KEYS.has(k)) return;
-      obj[k] = r.value ?? "";
-    });
-
-    return obj;
+  const obj = {
+    project_display_name: editForm?.project_display_name || "",
+    wir_title: editForm?.wir_title || "",
+    request_note: editForm?.request_note || "",
+    contractor_required_actions: editForm?.contractor_required_actions || "",
+    logo_adjustments: logoAdj, // ✅ ALWAYS save
   };
 
+  (extraRows || []).forEach((r) => {
+    const k = (r.key || "").trim();
+    if (!k) return;
+    if (RESERVED_EXTRA_KEYS.has(k)) return;
+    obj[k] = r.value ?? "";
+  });
+
+  return obj;
+};
+
+  // ✅ UPDATED: Save Changes also uploads sheet attachments (per checked category)
   const handleUpdateDetails = async () => {
     if (!wir?.id || !editForm) return;
 
@@ -525,18 +625,41 @@ export default function WIRDetailPage() {
       extra_data: buildExtraDataPayload(),
     };
 
+    // ✅ gather only categories that are checked AND have files selected
+    const checkedCats = ATT_MAP.filter((a) => !!editForm?.[a.flag]).map((a) => a.category);
+    const uploadQueue = checkedCats
+      .filter((cat) => (sheetUploads?.[cat]?.files || []).length > 0)
+      .map((cat) => ({
+        category: cat,
+        files: sheetUploads[cat].files,
+        name: sheetUploads[cat].name,
+        description: sheetUploads[cat].description,
+      }));
+
     try {
       setActionLoading(true);
+
+      // 1) Update WIR fields
       await updateWIR(wir.id, payload);
-      toast.success("WIR updated.");
+
+      // 2) Upload selected attachments from sheet (per category)
+      for (const item of uploadQueue) {
+        const fd = new FormData();
+        fd.append("category", item.category);
+        (item.files || []).forEach((f) => fd.append("files", f));
+        if (item.name) fd.append("name", item.name);
+        if (item.description) fd.append("description", item.description);
+        await uploadWIRAttachments(wir.id, fd);
+        resetSheetCat(item.category);
+      }
+
+      toast.success(uploadQueue.length ? "WIR updated + attachments uploaded." : "WIR updated.");
       setIsEditing(false);
       await fetchDetail();
     } catch (err) {
       console.error("Update WIR error", err);
       toast.error(
-        err.response?.data?.detail ||
-          err.response?.data?.error ||
-          "WIR update karte time error aaya."
+        err.response?.data?.detail || err.response?.data?.error || "WIR update / attachment upload error."
       );
     } finally {
       setActionLoading(false);
@@ -571,6 +694,7 @@ export default function WIRDetailPage() {
     }
   };
 
+  // existing upload button (bottom card) — unchanged
   const handleUploadAttachments = async () => {
     if (!wir?.id) return;
     if (!attachmentsFiles.length) {
@@ -596,6 +720,8 @@ export default function WIRDetailPage() {
       setAttachmentsFiles([]);
       setAttachmentName("");
       setAttachmentDescription("");
+      setAttInputKey((k) => k + 1);
+
       await fetchDetail();
     } catch (err) {
       console.error("Attachments upload error", err);
@@ -634,7 +760,7 @@ export default function WIRDetailPage() {
     }
   };
 
-  // ✅ signatures upload (FIXED: use api.js helper)
+  // ✅ signatures upload (use api.js helper)
   const saveContractorSignature = async () => {
     if (!wir?.id) return;
     if (!contractorSignFile) {
@@ -691,14 +817,19 @@ export default function WIRDetailPage() {
     }
   };
 
-  // EXPORT PDF (print)
-  const handleExportPdf = () => {
+  // ✅ PRINT fallback (in case html2pdf is not installed / fails)
+  const handlePrintFallback = () => {
     if (!pdfRef.current || !wir) {
       toast.error("PDF content ready nahi hai.");
       return;
     }
     try {
-      const printContents = pdfRef.current.innerHTML;
+      const sheet = pdfRef.current.querySelector("#wir-pdf-sheet");
+      if (!sheet) {
+        toast.error("PDF sheet not found.");
+        return;
+      }
+      const printContents = sheet.outerHTML;
       const win = window.open("", "", "height=800,width=1000");
       if (!win) {
         toast.error("Popup blocked ho gaya. Please allow popups.");
@@ -717,11 +848,12 @@ export default function WIRDetailPage() {
                 font-family: Arial, sans-serif;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
+                background: #fff;
               }
               #wir-pdf-sheet {
                 page-break-inside: avoid;
                 break-inside: avoid;
-                margin-bottom: 0 !important;
+                margin: 0 !important;
               }
               #wir-pdf-sheet table { border-collapse: collapse; width: 100%; }
               #wir-pdf-sheet td {
@@ -731,6 +863,7 @@ export default function WIRDetailPage() {
                 vertical-align: top;
               }
               input, textarea, select { font-size: 9px !important; }
+              img { max-width: 100%; }
             </style>
           </head>
           <body>
@@ -743,8 +876,27 @@ export default function WIRDetailPage() {
       win.focus();
       win.print();
     } catch (e) {
-      console.error("PDF export error", e);
+      console.error("Print fallback error", e);
       toast.error("PDF export mein error aaya.");
+    }
+  };
+
+  // ✅ DOWNLOAD PDF (actual file)
+  const [includeAttachments, setIncludeAttachments] = useState(true);
+
+  const handleExportPdf = async () => {
+    if (!wir?.id) return;
+
+    try {
+      setPdfLoading(true);
+      await exportWIRPdf(wir.id, includeAttachments);
+      toast.success("PDF downloaded.");
+    } catch (e) {
+      console.error("Export PDF error", e);
+      toast.error(e?.message || "PDF export failed.");
+      // handlePrintFallback();
+    } finally {
+      setPdfLoading(false);
     }
   };
 
@@ -782,7 +934,15 @@ export default function WIRDetailPage() {
 
   const requestNote = editForm.request_note || "";
   const consultantComments = editForm.consultant_comments || "";
-  const decision = (editForm.decision || "NONE").toUpperCase();
+const decision = (editForm.decision || "NONE").toUpperCase();
+//   const decisionLabel = useMemo(() => {
+//   const d = DECISIONS.find((x) => x.value === decision);
+//   if (!d || d.value === "NONE") return "";
+//   return d.label; // e.g. "B - Proceed With Works As Noted Above"
+// }, [decision]);
+
+// ✅ Decision value + label (safe even before editForm is ready)
+
 
   return (
     <div
@@ -831,18 +991,41 @@ export default function WIRDetailPage() {
         {isEditing ? "Cancel Edit" : "Edit Mode"}
       </button>
 
-      <button type="button" onClick={handleExportPdf} style={{ ...btnExportStyle, marginLeft: 8 }}>
-        ⬇ Export PDF
+      <button
+        type="button"
+        onClick={handleExportPdf}
+        disabled={pdfLoading}
+        style={{
+          ...btnExportStyle,
+          marginLeft: 8,
+          opacity: pdfLoading ? 0.75 : 1,
+          cursor: pdfLoading ? "not-allowed" : "pointer",
+        }}
+      >
+        {pdfLoading ? "⏳ Generating PDF..." : "⬇ Export PDF"}
       </button>
 
       {/* Meta info */}
       <div style={{ marginTop: 10, marginBottom: 16, fontSize: 13 }}>
-        <div><strong>WIR ID:</strong> #{wir.id}</div>
-        <div><strong>Status:</strong> {wir.status || "-"}</div>
-        <div><strong>Project ID:</strong> {wir.project_id || "-"}</div>
-        <div><strong>Created By:</strong> {wir.created_by_name || "-"}</div>
-        <div><strong>Current Assignee:</strong> {wir.current_assignee_name || "-"}</div>
-        <div><strong>Created At:</strong> {wir.created_at ? new Date(wir.created_at).toLocaleString() : "-"}</div>
+        <div>
+          <strong>WIR ID:</strong> #{wir.id}
+        </div>
+        <div>
+          <strong>Status:</strong> {wir.status || "-"}
+        </div>
+        <div>
+          <strong>Project ID:</strong> {wir.project_id || "-"}
+        </div>
+        <div>
+          <strong>Created By:</strong> {wir.created_by_name || "-"}
+        </div>
+        <div>
+          <strong>Current Assignee:</strong> {wir.current_assignee_name || "-"}
+        </div>
+        <div>
+          <strong>Created At:</strong>{" "}
+          {wir.created_at ? new Date(wir.created_at).toLocaleString() : "-"}
+        </div>
       </div>
 
       {/* ✅ Project editing (project_id) */}
@@ -872,7 +1055,9 @@ export default function WIRDetailPage() {
             </div>
 
             <div>
-              <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 6 }}>Project Display Name (Header)</div>
+              <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 6 }}>
+                Project Display Name (Header)
+              </div>
               <input
                 name="project_display_name"
                 value={editForm.project_display_name}
@@ -898,7 +1083,9 @@ export default function WIRDetailPage() {
           >
             <option value="">Select user</option>
             {(forwardUsers || []).map((u) => (
-              <option key={u.id} value={u.id}>{u.label}</option>
+              <option key={u.id} value={u.id}>
+                {u.label}
+              </option>
             ))}
           </select>
         </div>
@@ -932,7 +1119,16 @@ export default function WIRDetailPage() {
           <div style={logoBox}>
             <div style={logoPreview}>
               {wir.client_logo ? (
-                <img src={wir.client_logo} alt="Client Logo" style={logoImg} />
+<img
+  src={wir.client_logo}
+  alt="Client Logo"
+  style={{
+    ...logoImg,
+    objectFit: logoAdj.client?.fit || "contain",
+    transform: `translate(${logoAdj.client?.x || 0}px, ${logoAdj.client?.y || 0}px) scale(${logoAdj.client?.scale || 1})`,
+    transformOrigin: "center",
+  }}
+/>
               ) : (
                 <span style={logoPlaceholder}>Client Logo</span>
               )}
@@ -952,7 +1148,16 @@ export default function WIRDetailPage() {
           <div style={logoBox}>
             <div style={logoPreview}>
               {wir.pmc_logo ? (
-                <img src={wir.pmc_logo} alt="PMC Logo" style={logoImg} />
+<img
+  src={wir.pmc_logo}
+  alt="PMC Logo"
+  style={{
+    ...logoImg,
+    objectFit: logoAdj.pmc?.fit || "contain",
+    transform: `translate(${logoAdj.pmc?.x || 0}px, ${logoAdj.pmc?.y || 0}px) scale(${logoAdj.pmc?.scale || 1})`,
+    transformOrigin: "center",
+  }}
+/>
               ) : (
                 <span style={{ ...logoPlaceholder, color: "#2563eb" }}>PMC&apos;s Logo</span>
               )}
@@ -972,7 +1177,16 @@ export default function WIRDetailPage() {
           <div style={logoBox}>
             <div style={logoPreview}>
               {wir.contractor_logo ? (
-                <img src={wir.contractor_logo} alt="Contractor Logo" style={logoImg} />
+<img
+  src={wir.contractor_logo}
+  alt="Contractor Logo"
+  style={{
+    ...logoImg,
+    objectFit: logoAdj.contractor?.fit || "contain",
+    transform: `translate(${logoAdj.contractor?.x || 0}px, ${logoAdj.contractor?.y || 0}px) scale(${logoAdj.contractor?.scale || 1})`,
+    transformOrigin: "center",
+  }}
+/>
               ) : (
                 <span style={{ ...logoPlaceholder, color: "#16a34a" }}>Contractor&apos;s Logo</span>
               )}
@@ -1036,39 +1250,117 @@ export default function WIRDetailPage() {
 
               <tbody>
                 {/* Top logos row */}
-                <tr>
-                  <td style={tdBox} colSpan={2}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 62, height: 44, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {wir.client_logo ? (
-                          <img src={wir.client_logo} alt="Client" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                        ) : (
-                          <span style={{ fontWeight: 900 }}>LOGO</span>
-                        )}
-                      </div>
-                      <div style={{ lineHeight: 1.05 }}>
-                        <div style={{ fontWeight: 900, fontSize: 18 }}>HORIZON</div>
-                        <div style={{ fontWeight: 800, fontSize: 11, opacity: 0.9 }}>INDUSTRIAL PARKS</div>
-                      </div>
-                    </div>
-                  </td>
+                {/* Top logos row */}
+<tr>
+  {/* LEFT: Client (colSpan 2) */}
+  <td style={tdBox} colSpan={2}>
+    <div
+      style={{
+        width: 140,
+        height: 70,
+        border: "2px solid #000",
+        borderRadius: 8,
+        overflow: "hidden",
+        background: "#fff",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {wir.client_logo ? (
+        <img
+          src={wir.client_logo}
+          alt="Client"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: logoAdj.client?.fit || "contain",
+            transform: `translate(${logoAdj.client?.x || 0}px, ${logoAdj.client?.y || 0}px) scale(${logoAdj.client?.scale || 1})`,
+            transformOrigin: "center",
+            display: "block",
+          }}
+        />
+      ) : (
+        <span style={{ fontWeight: 900 }}>Client Logo</span>
+      )}
+    </div>
+  </td>
 
-                  <td style={{ ...tdBox, textAlign: "center" }}>
-                    {wir.pmc_logo ? (
-                      <img src={wir.pmc_logo} alt="PMC" style={{ maxWidth: 140, maxHeight: 52, objectFit: "contain" }} />
-                    ) : (
-                      <div style={{ fontWeight: 900, color: "#2563eb" }}>PMC&apos;s<br />Logo</div>
-                    )}
-                  </td>
+  {/* CENTER: PMC */}
+  <td style={{ ...tdBox, textAlign: "center" }}>
+    <div
+      style={{
+        width: 140,
+        height: 70,
+        margin: "0 auto",
+        border: "2px solid #000",
+        borderRadius: 8,
+        overflow: "hidden",
+        background: "#fff",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {wir.pmc_logo ? (
+        <img
+          src={wir.pmc_logo}
+          alt="PMC"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: logoAdj.pmc?.fit || "contain",
+            transform: `translate(${logoAdj.pmc?.x || 0}px, ${logoAdj.pmc?.y || 0}px) scale(${logoAdj.pmc?.scale || 1})`,
+            transformOrigin: "center",
+            display: "block",
+          }}
+        />
+      ) : (
+        <div style={{ fontWeight: 900, color: "#2563eb", textAlign: "center" }}>
+          PMC&apos;s<br />Logo
+        </div>
+      )}
+    </div>
+  </td>
 
-                  <td style={{ ...tdBox, textAlign: "center" }}>
-                    {wir.contractor_logo ? (
-                      <img src={wir.contractor_logo} alt="Contractor" style={{ maxWidth: 140, maxHeight: 52, objectFit: "contain" }} />
-                    ) : (
-                      <div style={{ fontWeight: 900, color: "#16a34a" }}>Contractor&apos;s<br />Logo</div>
-                    )}
-                  </td>
-                </tr>
+  {/* RIGHT: Contractor */}
+  <td style={{ ...tdBox, textAlign: "center" }}>
+    <div
+      style={{
+        width: 140,
+        height: 70,
+        margin: "0 auto",
+        border: "2px solid #000",
+        borderRadius: 8,
+        overflow: "hidden",
+        background: "#fff",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {wir.contractor_logo ? (
+        <img
+          src={wir.contractor_logo}
+          alt="Contractor"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: logoAdj.contractor?.fit || "contain",
+            transform: `translate(${logoAdj.contractor?.x || 0}px, ${logoAdj.contractor?.y || 0}px) scale(${logoAdj.contractor?.scale || 1})`,
+            transformOrigin: "center",
+            display: "block",
+          }}
+        />
+      ) : (
+        <div style={{ fontWeight: 900, color: "#16a34a", textAlign: "center" }}>
+          Contractor&apos;s<br />Logo
+        </div>
+      )}
+    </div>
+  </td>
+</tr>
+
 
                 {/* Project + Title */}
                 <tr>
@@ -1254,23 +1546,77 @@ export default function WIRDetailPage() {
                         <div style={{ fontWeight: 900, marginBottom: 8 }}>Attachments:</div>
 
                         {ATT_MAP.map((a) => (
-                          <div key={a.key} style={chkRow}>
-                            {isEditing ? (
-                              <>
+                          <div key={a.key} style={{ marginBottom: 10 }}>
+                            <div style={chkRow}>
+                              {isEditing ? (
+  <>
+    <input
+      type="checkbox"
+      name={a.flag}
+      checked={!!editForm[a.flag]}
+      onChange={handleEditChange}
+      style={{ marginRight: 8 }}
+    />
+    <span style={chkText}>{a.label}</span>
+    {!!editForm[a.flag] ? <span style={{ marginLeft: 8, fontWeight: 900 }}>✓</span> : null}
+  </>
+) : (
+  <>
+    <Box checked={!!editForm[a.flag]} />
+    <span style={chkText}>{a.label}</span>
+  </>
+)}
+
+                            </div>
+
+                            {/* ✅ NEW: if checked + edit mode => show upload input INSIDE SHEET */}
+                            {isEditing && !!editForm[a.flag] && (
+                              <div style={{ marginLeft: 22, padding: 8, border: "1px dashed #000", borderRadius: 8 }}>
+                                <div style={{ fontSize: 11, fontWeight: 900, marginBottom: 6 }}>
+                                  Upload files for {a.category}
+                                </div>
+
                                 <input
-                                  type="checkbox"
-                                  name={a.flag}
-                                  checked={!!editForm[a.flag]}
-                                  onChange={handleEditChange}
-                                  style={{ marginRight: 8 }}
+                                  key={sheetUploads?.[a.category]?.inputKey || 0}
+                                  type="file"
+                                  multiple
+                                  onChange={(e) => setSheetFiles(a.category, Array.from(e.target.files || []))}
                                 />
-                                <span style={chkText}>{a.label}</span>
-                              </>
-                            ) : (
-                              <>
-                                <Box checked={!!editForm[a.flag]} />
-                                <span style={chkText}>{a.label}</span>
-                              </>
+
+                                {(sheetUploads?.[a.category]?.files || []).length > 0 && (
+                                  <ul style={{ marginTop: 6, fontSize: 11, paddingLeft: 16 }}>
+                                    {(sheetUploads[a.category].files || []).map((f, i) => (
+                                      <li key={i}>{f.name}</li>
+                                    ))}
+                                  </ul>
+                                )}
+
+                                <div style={{ marginTop: 8 }}>
+                                  <div style={{ fontSize: 10, fontWeight: 900 }}>Display Name (optional)</div>
+                                  <input
+                                    type="text"
+                                    value={sheetUploads?.[a.category]?.name || ""}
+                                    onChange={(e) => setSheetMeta(a.category, "name", e.target.value)}
+                                    style={{ ...hdrInput, fontWeight: 900, marginTop: 4 }}
+                                    placeholder="e.g. ITP / Checklist"
+                                  />
+                                </div>
+
+                                <div style={{ marginTop: 8 }}>
+                                  <div style={{ fontSize: 10, fontWeight: 900 }}>Description (optional)</div>
+                                  <textarea
+                                    rows={2}
+                                    value={sheetUploads?.[a.category]?.description || ""}
+                                    onChange={(e) => setSheetMeta(a.category, "description", e.target.value)}
+                                    style={{ ...txtAreaSmall, width: "100%", marginTop: 4 }}
+                                    placeholder="Short note..."
+                                  />
+                                </div>
+
+                                <div style={{ marginTop: 6, fontSize: 10, color: "#111" }}>
+                                  (Save Changes pe files upload ho jayengi)
+                                </div>
+                              </div>
                             )}
                           </div>
                         ))}
@@ -1388,9 +1734,10 @@ export default function WIRDetailPage() {
                         ) : null}
 
                         <div style={{ fontWeight: 900, marginTop: 6 }}>Decision:</div>
-                        <div style={{ fontWeight: 900, textDecoration: "underline" }}>
-                          {decision === "NONE" ? "" : decision}
-                        </div>
+<div style={{ fontWeight: 900, textDecoration: "underline" }}>
+  {decisionLabel}
+</div>
+
 
                         {Array.from({ length: 10 }).map((_, i) => (
                           <div key={i} style={{ borderBottom: "1px dotted #000", height: 16 }} />
@@ -1523,7 +1870,8 @@ export default function WIRDetailPage() {
         <h3 style={{ marginTop: 0 }}>🧩 Extra Fields (Modular)</h3>
         <p style={{ fontSize: 12, color: "#6b7280", marginTop: 0 }}>
           Ye values <code>extra_data</code> JSON me store hoti hain. Reserved keys hide:{" "}
-          <code>project_display_name</code>, <code>wir_title</code>, <code>request_note</code>, <code>contractor_required_actions</code>
+          <code>project_display_name</code>, <code>wir_title</code>, <code>request_note</code>,{" "}
+          <code>contractor_required_actions</code>
         </p>
 
         {!isEditing ? (
@@ -1540,7 +1888,9 @@ export default function WIRDetailPage() {
                   {Object.keys(extra).map((k) => (
                     <tr key={k}>
                       <td style={miniTdKey}>{k}</td>
-                      <td style={miniTdVal}>{extra[k] === null || extra[k] === undefined ? "" : String(extra[k])}</td>
+                      <td style={miniTdVal}>
+                        {extra[k] === null || extra[k] === undefined ? "" : String(extra[k])}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1600,7 +1950,7 @@ export default function WIRDetailPage() {
         )}
       </div>
 
-      {/* ✅ Attachments: visible + grouped + upload */}
+      {/* ✅ Attachments (existing list + bottom upload card) */}
       <div style={{ ...cardStyle, background: cardColor, border: `1px solid ${borderColor}` }}>
         <h3 style={{ marginTop: 0 }}>📎 Attachments (Visible from Create + New Upload)</h3>
 
@@ -1613,12 +1963,7 @@ export default function WIRDetailPage() {
                   <ul style={{ fontSize: 13, paddingLeft: 18, margin: 0 }}>
                     {(attachmentsByCategory[cat] || []).map((att) => (
                       <li key={att.id} style={{ marginBottom: 8 }}>
-                        <a
-                          href={att.file}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ fontWeight: 900 }}
-                        >
+                        <a href={att.file} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 900 }}>
                           {att.name || (att.file && att.file.split("/").slice(-1)[0]) || "Attachment"}
                         </a>
                         {att.description ? <span style={{ marginLeft: 6, color: "#555" }}>– {att.description}</span> : null}
@@ -1639,7 +1984,7 @@ export default function WIRDetailPage() {
           <p style={{ fontSize: 13, color: "#777", marginBottom: 12 }}>No attachments yet.</p>
         )}
 
-        <div style={{ borderTop: "1px dashed #e5e7eb", paddingTop: 12, marginTop: 14 }}>
+        {/* <div style={{ borderTop: "1px dashed #e5e7eb", paddingTop: 12, marginTop: 14 }}>
           <h4 style={{ fontSize: 14, marginBottom: 8 }}>Upload new attachments</h4>
 
           <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 10, alignItems: "center" }}>
@@ -1658,7 +2003,12 @@ export default function WIRDetailPage() {
           </div>
 
           <div style={{ marginTop: 10 }}>
-            <input type="file" multiple onChange={(e) => setAttachmentsFiles(Array.from(e.target.files || []))} />
+            <input
+              key={attInputKey}
+              type="file"
+              multiple
+              onChange={(e) => setAttachmentsFiles(Array.from(e.target.files || []))}
+            />
             {attachmentsFiles.length > 0 && (
               <ul style={{ marginTop: 6, fontSize: 12 }}>
                 {attachmentsFiles.map((file, idx) => (
@@ -1698,7 +2048,7 @@ export default function WIRDetailPage() {
           >
             {actionLoading ? "Uploading..." : "Upload Attachments"}
           </button>
-        </div>
+        </div> */}
       </div>
 
       {/* ✅ Signatures Update (2) */}
