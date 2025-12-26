@@ -4731,6 +4731,12 @@
 
 // export default ProjectOverview;
 
+
+
+
+
+
+
 // src/components/ProjectOverview.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -4816,12 +4822,18 @@ function fmtInt(n) {
 
 function titleCaseStatus(status) {
   if (!status) return "-";
-  return String(status)
-    .toLowerCase()
+
+  const s = String(status).toLowerCase();
+
+  // ✅ Rename only (value same rahega)
+  if (s === "pending_for_inspector") return "Pending For Checker";
+
+  return s
     .split("_")
-    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .map((x) => x.charAt(0).toUpperCase() + x.slice(1))
     .join(" ");
 }
+
 
 function statusColor(status) {
   const s = String(status || "").toLowerCase();
@@ -4929,43 +4941,111 @@ const isSnagPoint = (it) => {
   return t === "snag" || t === "snag_point";
 };
 
-const pendingFromLabel = (statusCounts) => {
-  // priority order (you can change)
-  if ((statusCounts.not_started || 0) > 0) return "Initializer";
+const pendingFromLabel = (statusCounts = {}) => {
+  // 1) Not started -> initializer
+  if ((statusCounts.not_started || 0) > 0 || (statusCounts.created || 0) > 0) return "Initializer";
+
+  // 2) Pending for maker / started -> maker
+  if (
+    (statusCounts.pending_for_maker || 0) > 0 ||
+    (statusCounts.pending_maker || 0) > 0 ||
+    (statusCounts.started || 0) > 0
+  ) return "Maker";
+
+  // 3) Inspector bucket
   if ((statusCounts.pending_for_inspector || 0) > 0) return "Inspector";
-  if ((statusCounts.pending_checker || 0) > 0 || (statusCounts.pending_for_checker || 0) > 0) return "Checker";
+
+  // 4) Checker bucket
+  if (
+    (statusCounts.pending_checker || 0) > 0 ||
+    (statusCounts.pending_for_checker || 0) > 0
+  ) return "Checker";
+
   return "";
 };
 
 const overallStatusLabel = (pendingCount) => (pendingCount > 0 ? "Pending" : "Completed");
+const sortRowsByTowerUnit = (rows = []) => {
+  const unitNum = (v) => {
+    const n = Number(String(v ?? "").replace(/[^\d]/g, ""));
+    return Number.isNaN(n) ? 0 : n;
+  };
 
-export function buildHotoRowsFromItems(items, { stageMap, flatLookup, buildingNameMap, getChecklistLabel } = {}) {
-  // Left block: only Snag Points summary (but PURPOSE FILTERING is handled by caller)
+  rows.sort((a, b) => {
+    const t = String(a?.[0] ?? "").localeCompare(String(b?.[0] ?? ""));
+    if (t) return t;
+
+    const ua = unitNum(a?.[1]);
+    const ub = unitNum(b?.[1]);
+    if (ua !== ub) return ua - ub;
+
+    const c = String(a?.[2] ?? "").localeCompare(String(b?.[2] ?? ""));
+    if (c) return c;
+
+    return String(a?.[3] ?? "").localeCompare(String(b?.[3] ?? ""));
+  });
+
+  return rows;
+};
+
+export function buildHotoRowsFromItems(
+  items,
+  { stageMap, flatLookup, buildingNameMap, getChecklistLabel } = {}
+) {
   const map = new Map();
 
   (items || []).forEach((it) => {
-    if (!isSnagPoint(it)) return; // ✅ only snag points here
+    // ❌ remove this line:
+    // if (!isSnagPoint(it)) return;
 
     const loc = it.location || {};
     const flatId = loc.flat_id;
     const meta = flatId ? flatLookup?.[flatId] : null;
+    const towerRaw =
+  loc.tower_name ||
+  loc.building_name ||
+  (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
+  (loc.building_id ? `Building #${loc.building_id}` : "");
 
-    const tower =
-      loc.tower_name ||
-      loc.building_name ||
-      (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
-      (loc.building_id ? `Building #${loc.building_id}` : "");
+const unitRaw = meta?.number || flatId || "";
 
-    const unitNo = meta?.number || flatId || "";
+const stageId = it.checklist?.stage_id || "";
+const stageRaw = stageMap?.[stageId] || stageId || "";
 
-    const stageId = it.checklist?.stage_id || "";
-    const stage = stageMap?.[stageId] || stageId || "";
+const checklistRaw = getChecklistLabel
+  ? getChecklistLabel(it)
+  : it.checklist?.title || it.checklist?.name || "";
 
-    const checklist = getChecklistLabel ? getChecklistLabel(it) : (it.checklist?.title || it.checklist?.name || "");
+// ✅ normalize to avoid duplicates like "Tower A " vs "Tower A"
+const tower = String(towerRaw || "").trim();
+const unitNo = String(unitRaw || "").trim();
+const stage = String(stageRaw || "").trim();
+const checklist = String(checklistRaw || "").trim();
 
-    const key = `${tower}|${unitNo}|${checklist}|${stage}`;
+const key = `${tower}|${unitNo}|${checklist}|${stage}`;
+
+
+    // const tower =
+    //   loc.tower_name ||
+    //   loc.building_name ||
+    //   (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
+    //   (loc.building_id ? `Building #${loc.building_id}` : "");
+
+    // const unitNo = meta?.number || flatId || "";
+
+    // const stageId = it.checklist?.stage_id || "";
+    // const stage = stageMap?.[stageId] || stageId || "";
+
+    // const checklist = getChecklistLabel
+    //   ? getChecklistLabel(it)
+    //   : it.checklist?.title || it.checklist?.name || "";
+
+    // const key = `${tower}|${unitNo}|${checklist}|${stage}`;
     const rec = map.get(key) || {
-      tower, unitNo, checklist, stage,
+      tower,
+      unitNo,
+      checklist,
+      stage,
       total: 0,
       completed: 0,
       statusCounts: {},
@@ -4980,93 +5060,628 @@ export function buildHotoRowsFromItems(items, { stageMap, flatLookup, buildingNa
     map.set(key, rec);
   });
 
-  return Array.from(map.values()).map((r) => {
-    const pending = r.total - r.completed;
-    return [
-      r.tower,
-      r.unitNo,
-      r.checklist,
-      r.stage,
-      r.total,
-      r.completed,
-      pending,
-      "",
-      pending > 0 ? "Pending" : "Completed",
-      pendingFromLabel(r.statusCounts),
-    ];
-  });
+  const rows = Array.from(map.values()).map((r) => {
+  const pending = r.total - r.completed;
+  return [
+    r.tower,
+    r.unitNo,
+    r.checklist,
+    r.stage,
+    r.total,
+    r.completed,
+    pending,
+    "",
+    pending > 0 ? "Pending" : "Completed",
+    pendingFromLabel(r.statusCounts),
+  ];
+});
+
+return sortRowsByTowerUnit(rows);
+
 }
 
-export function buildSnaggingRowsFromItems(items, { stageMap, flatLookup, buildingNameMap, getChecklistLabel } = {}) {
-  // Right block: Checkpoints + Snag Points (but PURPOSE FILTERING is handled by caller)
+// export function buildSnaggingRowsFromItems(
+//   items,
+//   { stageMap, flatLookup, buildingNameMap, getChecklistLabel } = {}
+// ) {
+//   const map = new Map();
+
+//   (items || []).forEach((it) => {
+//     const loc = it.location || {};
+//     const flatId = loc.flat_id;
+//     const meta = flatId ? flatLookup?.[flatId] : null;
+
+//     const tower =
+//       loc.tower_name ||
+//       loc.building_name ||
+//       (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
+//       (loc.building_id ? `Building #${loc.building_id}` : "");
+
+//     const unitNo = meta?.number || flatId || "";
+
+//     const stageId = it.checklist?.stage_id || "";
+//     const stage = stageMap?.[stageId] || stageId || "";
+
+//     const checklist = getChecklistLabel
+//       ? getChecklistLabel(it)
+//       : it.checklist?.title || it.checklist?.name || "";
+
+//     const key = `${tower}|${unitNo}|${checklist}|${stage}`;
+//     const rec = map.get(key) || {
+//       tower,
+//       unitNo,
+//       checklist,
+//       stage,
+
+//       // ✅ keep both, but we will mirror them
+//       totalCp: 0,
+//       doneCp: 0,
+//       totalSnag: 0,
+//       doneSnag: 0,
+
+//       statusCounts: {},
+//       attemptsMax: 0,
+//     };
+
+//     const st = String(it.item_status || "").toLowerCase();
+//     rec.statusCounts[st] = (rec.statusCounts[st] || 0) + 1;
+
+//     // ✅ IMPORTANT: CP & Snag both count the SAME items
+//     rec.totalCp += 1;
+//     rec.totalSnag += 1;
+
+//     if (st === "completed") {
+//       rec.doneCp += 1;
+//       rec.doneSnag += 1;
+//     }
+
+//     const att = Number(it?.latest_submission?.attempts || 0);
+//     if (!Number.isNaN(att)) rec.attemptsMax = Math.max(rec.attemptsMax, att);
+
+//     map.set(key, rec);
+//   });
+
+//   return Array.from(map.values()).map((r) => {
+//     const pendingCp = r.totalCp - r.doneCp;
+//     const pendingSnag = r.totalSnag - r.doneSnag;
+
+//     // ✅ now these will always be identical
+//     const cpPct = r.totalCp > 0 ? Math.round((r.doneCp / r.totalCp) * 100) : 0;
+//     const snagPct = r.totalSnag > 0 ? Math.round((r.doneSnag / r.totalSnag) * 100) : 0;
+
+//     // ✅ overall also same (use base totals, no double-count confusion)
+//     const overallPct = r.totalCp > 0 ? Math.round((r.doneCp / r.totalCp) * 100) : 0;
+
+//     const pendingAll = pendingCp; // same as pendingSnag
+
+//     return [
+//       r.tower,
+//       r.unitNo,
+//       r.checklist,
+//       r.stage,
+
+//       r.totalCp,
+//       r.doneCp,
+//       pendingCp,
+//       `${cpPct}%`,
+
+//       r.totalSnag,
+//       r.doneSnag,
+//       pendingSnag,
+//       `${snagPct}%`,
+
+//       r.attemptsMax || 0,
+//       pendingAll > 0 ? "Pending" : "Completed",
+//       pendingFromLabel(r.statusCounts),
+//       `${overallPct}%`,
+//     ];
+//   });
+// }
+
+// export function buildSnaggingRowsFromItems(
+//   items,
+//   { stageMap, flatLookup, buildingNameMap, getChecklistLabel } = {}
+// ) {
+//   const map = new Map();
+
+//   const norm = (s) => String(s || "").toLowerCase();
+
+//   // 👇 tweak these if your backend uses different status names
+//   const MAKER_PENDING_STATUSES = new Set([
+//     "pending_for_maker",
+//     "pending_maker",
+//     "started",
+//   ]);
+
+//   const CHECKER_PENDING_STATUSES = new Set([
+//     "pending_checker",
+//     "pending_for_checker",
+//     "pending_for_inspector", // you renamed this label in UI as "Pending For Checker"
+//   ]);
+
+//   const isCheckerChecked = (it) => {
+//     const latest = it?.latest_submission || {};
+//     const st = norm(it?.item_status);
+//     // primary: checked_at exists
+//     if (latest?.checked_at) return true;
+//     // fallback: if item moved past creation/not_started states
+//     if (st && st !== "created" && st !== "not_started") return true;
+//     return false;
+//   };
+
+//   const isClosed = (it) => norm(it?.item_status) === "completed";
+
+//   const getAttempts = (it) => {
+//     const n = Number(it?.latest_submission?.attempts || 0);
+//     return Number.isNaN(n) ? 0 : n;
+//   };
+
+//   // ✅ identify snag points:
+//   // 1) trust actual flags if present (your helper exists above in file)
+//   // 2) otherwise infer via statuses / attempts
+//   const isSnag = (it) => {
+//     try {
+//       if (typeof isSnagPoint === "function" && isSnagPoint(it) === true) return true;
+//     } catch {}
+
+//     const st = norm(it?.item_status);
+//     const att = getAttempts(it);
+
+//     if (MAKER_PENDING_STATUSES.has(st)) return true;
+//     if (CHECKER_PENDING_STATUSES.has(st)) return true;
+
+//     // attempts > 0 usually means checker rejected at least once (snag cycle)
+//     if (att > 0) return true;
+
+//     return false;
+//   };
+
+//   const computePendingFromAndStatus = ({
+//     cpPending,
+//     totalSnag,
+//     makerPending,
+//     checkerPending,
+//   }) => {
+//     // If checker hasn't even checked all checkpoints yet
+//     if (cpPending > 0) return { status: "Pending by Checker", pendingFrom: "Checker" };
+
+//     // If snag exists -> maker/checker derived status
+//     if (totalSnag > 0) {
+//       if (makerPending > 0) return { status: "Pending by Maker", pendingFrom: "Maker" };
+//       if (checkerPending > 0) return { status: "Pending by Checker", pendingFrom: "Checker" };
+//       return { status: "Completed", pendingFrom: "" };
+//     }
+
+//     // No snags & checker finished
+//     return { status: "Completed", pendingFrom: "" };
+//   };
+
+//   (items || []).forEach((it) => {
+//     const loc = it.location || {};
+//     const flatId = loc.flat_id;
+//     const meta = flatId ? flatLookup?.[flatId] : null;
+
+//     // const tower =
+//     //   loc.tower_name ||
+//     //   loc.building_name ||
+//     //   (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
+//     //   (loc.building_id ? `Building #${loc.building_id}` : "");
+
+//     // const unitNo = meta?.number || flatId || "";
+
+//     // const stageId = it.checklist?.stage_id || "";
+//     // const stage = stageMap?.[stageId] || stageId || "";
+
+//     // const checklist = getChecklistLabel
+//     //   ? getChecklistLabel(it)
+//     //   : it.checklist?.title || it.checklist?.name || "";
+
+//     // const key = `${tower}|${unitNo}|${checklist}|${stage}`;
+//     const towerRaw =
+//   loc.tower_name ||
+//   loc.building_name ||
+//   (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
+//   (loc.building_id ? `Building #${loc.building_id}` : "");
+
+// const unitRaw = meta?.number || flatId || "";
+
+// const stageId = it.checklist?.stage_id || "";
+// const stageRaw = stageMap?.[stageId] || stageId || "";
+
+// const checklistRaw = getChecklistLabel
+//   ? getChecklistLabel(it)
+//   : it.checklist?.title || it.checklist?.name || "";
+
+// // ✅ normalize
+// const tower = String(towerRaw || "").trim();
+// const unitNo = String(unitRaw || "").trim();
+// const stage = String(stageRaw || "").trim();
+// const checklist = String(checklistRaw || "").trim();
+
+// const key = `${tower}|${unitNo}|${checklist}|${stage}`;
+
+
+//     const rec = map.get(key) || {
+//       tower,
+//       unitNo,
+//       checklist,
+//       stage,
+
+//       // totals
+//       totalCp: 0,
+//       checkerCheckDone: 0,
+
+//       totalSnag: 0,
+//       snagRejected: 0, // same bucket count
+
+//       makerPending: 0,
+//       checkerPending: 0,
+//       checkerDone: 0,
+
+//       // for overall
+//       nonSnagChecked: 0,
+
+//       attemptsMax: 0,
+//     };
+
+//     rec.totalCp += 1;
+
+//     const st = norm(it.item_status);
+//     const checked = isCheckerChecked(it);
+//     if (checked) rec.checkerCheckDone += 1;
+
+//     const att = getAttempts(it);
+//     rec.attemptsMax = Math.max(rec.attemptsMax, att);
+
+//     const snag = isSnag(it);
+//     if (snag) {
+//       rec.totalSnag += 1;
+//       rec.snagRejected += 1;
+
+//       // maker pending = currently with maker
+//       if (MAKER_PENDING_STATUSES.has(st)) {
+//         rec.makerPending += 1;
+//       } else if (!it?.latest_submission?.maker_at && !isClosed(it)) {
+//         // fallback: if maker never submitted and not closed, assume with maker
+//         rec.makerPending += 1;
+//       }
+
+//       // checker pending = currently with checker after maker submits
+//       if (CHECKER_PENDING_STATUSES.has(st)) {
+//         rec.checkerPending += 1;
+//       }
+
+//       // closed by checker
+//       if (isClosed(it)) rec.checkerDone += 1;
+//     } else {
+//       // non-snag: count done for overall when checker checked
+//       if (checked) rec.nonSnagChecked += 1;
+//     }
+
+//     map.set(key, rec);
+//   });
+
+//     const rows = Array.from(map.values()).map((r) => {
+//     const cpPending = r.totalCp - r.checkerCheckDone;
+//     const checkerCheckPct =
+//       r.totalCp > 0 ? Math.round((r.checkerCheckDone / r.totalCp) * 100) : 0;
+
+//     const makerDone = r.totalSnag - r.makerPending;
+//     const makerPct =
+//       r.totalSnag > 0 ? Math.round((makerDone / r.totalSnag) * 100) : 0;
+
+//     const checkerPct =
+//       r.totalSnag > 0 ? Math.round((r.checkerDone / r.totalSnag) * 100) : 0;
+
+//     const { status, pendingFrom } = computePendingFromAndStatus({
+//       cpPending,
+//       totalSnag: r.totalSnag,
+//       makerPending: r.makerPending,
+//       checkerPending: r.checkerPending,
+//     });
+
+//     const overallDone = r.nonSnagChecked + r.checkerDone;
+//     const overallPct =
+//       r.totalCp > 0 ? Math.round((overallDone / r.totalCp) * 100) : 0;
+
+//     return [
+//       r.tower,
+//       r.unitNo,
+//       r.checklist,
+//       r.stage,
+
+//       r.totalCp,
+//       r.checkerCheckDone,
+//       cpPending,
+//       `${checkerCheckPct}%`,
+
+//       r.totalSnag,
+//       r.snagRejected,
+
+//       makerDone,
+//       r.makerPending,
+//       `${makerPct}%`,
+
+//       r.checkerDone,
+//       r.checkerPending,
+//       `${checkerPct}%`,
+
+//       r.attemptsMax || 0,
+//       status,
+//       pendingFrom,
+//       `${overallPct}%`,
+//     ];
+//   });
+
+//   return sortRowsByTowerUnit(rows);
+// }
+
+
+export function buildSnaggingRowsFromItems(
+  items,
+  { stageMap, flatLookup, buildingNameMap, getChecklistLabel } = {}
+) {
   const map = new Map();
+  const norm = (s) => String(s || "").toLowerCase().trim();
+
+  const towerLabel = (loc = {}) =>
+    String(
+      (loc.tower_name ||
+        loc.building_name ||
+        (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
+        (loc.building_id ? `Building #${loc.building_id}` : "")) || ""
+    ).trim();
+
+  const unitLabel = (flatId, meta) =>
+    String(meta?.number || flatId || "").trim();
+
+  const stageLabel = (it) => {
+    const sid = it?.checklist?.stage_id;
+    return String(stageMap?.[sid] || sid || "").trim();
+  };
+
+  const checklistLabel = (it) =>
+    String(
+      (getChecklistLabel ? getChecklistLabel(it) : "") ||
+        it?.checklist?.title ||
+        it?.checklist?.name ||
+        ""
+    ).trim();
+
+  const toTime = (v) => {
+    const t = v ? new Date(v).getTime() : 0;
+    return Number.isNaN(t) ? 0 : t;
+  };
 
   (items || []).forEach((it) => {
     const loc = it.location || {};
     const flatId = loc.flat_id;
     const meta = flatId ? flatLookup?.[flatId] : null;
 
-    const tower =
-      loc.tower_name ||
-      loc.building_name ||
-      (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
-      (loc.building_id ? `Building #${loc.building_id}` : "");
-
-    const unitNo = meta?.number || flatId || "";
-
-    const stageId = it.checklist?.stage_id || "";
-    const stage = stageMap?.[stageId] || stageId || "";
-
-    const checklist = getChecklistLabel ? getChecklistLabel(it) : (it.checklist?.title || it.checklist?.name || "");
+    const tower = towerLabel(loc);
+    const unitNo = unitLabel(flatId, meta);
+    const stage = stageLabel(it);
+    const checklist = checklistLabel(it);
 
     const key = `${tower}|${unitNo}|${checklist}|${stage}`;
+
     const rec = map.get(key) || {
-      tower, unitNo, checklist, stage,
-      totalCp: 0, doneCp: 0,
-      totalSnag: 0, doneSnag: 0,
-      statusCounts: {},
+      tower,
+      unitNo,
+      checklist,
+      stage,
+
+      // ✅ Base
+      totalCp: 0,
+
+      // ✅ Checker initial check
+      checkerChecked: 0, // checked (accepted OR rejected)
+      cpPending: 0,       // derived later
+
+      // ✅ Open/total snags
+      totalSnagOpen: 0,   // derived later
+
+      // ✅ Rejected (actual snags raised by checker)
+      rejectedTotal: 0,
+
+      // ✅ Maker cycle on rejected
+      makerPending: 0,
+      makerDone: 0,
+
+      // ✅ Checker re-check cycle (only after maker submits)
+      checkerPending: 0,
+      checkerDone: 0,
+
       attemptsMax: 0,
     };
 
-    const st = String(it.item_status || "").toLowerCase();
-    rec.statusCounts[st] = (rec.statusCounts[st] || 0) + 1;
+    rec.totalCp += 1;
 
-    if (isSnagPoint(it)) {
-      rec.totalSnag += 1;
-      if (st === "completed") rec.doneSnag += 1;
-    } else {
-      rec.totalCp += 1;
-      if (st === "completed") rec.doneCp += 1;
+    const st = norm(it?.item_status);
+    const latest = it?.latest_submission || {};
+
+    const checkedAt = toTime(latest.checked_at); // checker action time
+    const makerAt = toTime(latest.maker_at);     // maker submit time
+    const attempts = Number(latest.attempts || 0);
+    rec.attemptsMax = Math.max(rec.attemptsMax, Number.isNaN(attempts) ? 0 : attempts);
+
+    const isClosed = st === "completed";
+
+    // ✅ Checker "checked" = accepted OR rejected (once checker touches)
+    // Prefer checked_at, fallback by status
+    const checkerTouched =
+      !!checkedAt ||
+      isClosed ||
+      st === "pending_for_maker" ||
+      st === "pending_maker" ||
+      st === "pending_for_checker" ||
+      st === "pending_for_inspector" ||
+      st === "pending_checker";
+
+    if (checkerTouched) rec.checkerChecked += 1;
+
+    // ✅ "Rejected by checker" = attempts>0 (true snag raised)
+    // Fallback: if status shows maker/checker cycle but attempts missing.
+    const everRejected =
+      attempts > 0 ||
+      st === "pending_for_maker" ||
+      st === "pending_maker" ||
+      st === "pending_for_checker" ||
+      st === "pending_for_inspector";
+
+    if (everRejected) {
+      rec.rejectedTotal += 1;
+
+      // ✅ Decide current bucket using timeline (more accurate than guessing)
+      // If maker has NOT submitted after last checker action -> pending with maker
+      if (!isClosed && (makerAt === 0 || makerAt <= checkedAt)) {
+        rec.makerPending += 1;
+      } else {
+        // maker has submitted (or item is closed)
+        rec.makerDone += 1;
+
+        if (isClosed) {
+          rec.checkerDone += 1;
+        } else {
+          // maker submitted but checker hasn't closed yet -> pending with checker
+          rec.checkerPending += 1;
+        }
+      }
     }
-
-    const att = Number(it?.latest_submission?.attempts || 0);
-    if (!Number.isNaN(att)) rec.attemptsMax = Math.max(rec.attemptsMax, att);
 
     map.set(key, rec);
   });
+  const rows = Array.from(map.values()).map((r) => {
+  const cpPending = r.totalCp - r.checkerChecked;
 
-  return Array.from(map.values()).map((r) => {
-    const pendingCp = r.totalCp - r.doneCp;
-    const pendingSnag = r.totalSnag - r.doneSnag;
-    const pendingAll = pendingCp + pendingSnag;
+  // OPEN rejected only
+  const totalSnagPoints = r.makerPending + r.checkerPending;
+  const totalRejectedByChecker = r.rejectedTotal;
 
-    return [
-      r.tower,
-      r.unitNo,
-      r.checklist,
-      r.stage,
-      r.totalCp,
-      r.doneCp,
-      pendingCp,
-      r.totalSnag,
-      r.doneSnag,
-      pendingSnag,
-      r.attemptsMax || 0,
-      pendingAll > 0 ? "Pending" : "Completed",
-      pendingFromLabel(r.statusCounts),
-    ];
-  });
+  const checkerCheckPct =
+    r.totalCp > 0 ? Math.round((r.checkerChecked / r.totalCp) * 100) : 0;
+
+  const makerDen = r.makerDone + r.makerPending;
+  const makerPct = makerDen > 0 ? Math.round((r.makerDone / makerDen) * 100) : 0;
+
+  const checkerDen = r.checkerDone + r.checkerPending;
+  const checkerPct = checkerDen > 0 ? Math.round((r.checkerDone / checkerDen) * 100) : 0;
+
+  let status = "Completed";
+  let pendingFrom = "";
+  if (cpPending > 0) {
+    status = "Pending by Checker";
+    pendingFrom = "Checker";
+  } else if (r.makerPending > 0) {
+    status = "Pending by Maker";
+    pendingFrom = "Maker";
+  } else if (r.checkerPending > 0) {
+    status = "Pending by Checker";
+    pendingFrom = "Checker";
+  }
+
+  const overallDone = r.totalCp - (cpPending + totalSnagPoints);
+  const overallPct = r.totalCp > 0 ? Math.round((overallDone / r.totalCp) * 100) : 0;
+
+  return [
+    r.tower,
+    r.unitNo,
+    r.checklist,
+    r.stage,
+
+    r.totalCp,
+    r.checkerChecked,
+    cpPending,
+    `${checkerCheckPct}%`,          // ✅ THIS WAS MISSING (col 7)
+
+    totalSnagPoints,               // col 8
+    totalRejectedByChecker,        // col 9
+
+    r.makerDone,                   // col 10
+    r.makerPending,                // col 11
+    `${makerPct}%`,                // col 12
+
+    r.checkerDone,                 // col 13
+    r.checkerPending,              // col 14
+    `${checkerPct}%`,              // col 15
+
+    r.attemptsMax || 0,            // col 16
+    status,                        // col 17
+    pendingFrom,                   // col 18
+    `${overallPct}%`,              // col 19
+  ];
+});
+
+  // const rows = Array.from(map.values()).map((r) => {
+  //   const cpPending = r.totalCp - r.checkerChecked;
+
+  //   // ✅ Open points (tumhari language: "pending wale points")
+  //   // (not yet checked by checker) + (rejected pending with maker) + (maker submitted but checker pending)
+  //   const totalSnagOpen = cpPending + r.makerPending + r.checkerPending;
+
+  //   // ✅ Maker %
+  //   const makerDen = r.makerDone + r.makerPending; // = rejectedTotal basically
+  //   const makerPct = makerDen > 0 ? Math.round((r.makerDone / makerDen) * 100) : 0;
+
+  //   // ✅ Checker %
+  //   const checkerDen = r.checkerDone + r.checkerPending; // only after maker submit
+  //   const checkerPct = checkerDen > 0 ? Math.round((r.checkerDone / checkerDen) * 100) : 0;
+
+  //   // ✅ Status / Pending From
+  //   let status = "Completed";
+  //   let pendingFrom = "";
+  //   if (cpPending > 0) {
+  //     status = "Pending by Checker";
+  //     pendingFrom = "Checker";
+  //   } else if (r.makerPending > 0) {
+  //     status = "Pending by Maker";
+  //     pendingFrom = "Maker";
+  //   } else if (r.checkerPending > 0) {
+  //     status = "Pending by Checker";
+  //     pendingFrom = "Checker";
+  //   }
+
+  //   // ✅ Overall %
+  //   const openAll = totalSnagOpen;
+  //   const overallDone = r.totalCp - openAll;
+  //   const overallPct = r.totalCp > 0 ? Math.round((overallDone / r.totalCp) * 100) : 0;
+
+  //   const checkerCheckPct = r.totalCp > 0 ? Math.round((r.checkerChecked / r.totalCp) * 100) : 0;
+
+  //   return [
+  //     r.tower,
+  //     r.unitNo,
+  //     r.checklist,
+  //     r.stage,
+
+  //     r.totalCp,
+  //     r.checkerChecked,
+  //     cpPending,
+  //     `${checkerCheckPct}%`,
+
+  //     totalSnagOpen,        // ✅ Total Snag Points (open/pending)
+  //     r.rejectedTotal,      // ✅ Snag Rejected by Checker (TRUE rejected)
+
+  //     r.makerDone,
+  //     r.makerPending,
+  //     `${makerPct}%`,
+
+  //     r.checkerDone,
+  //     r.checkerPending,
+  //     `${checkerPct}%`,
+
+  //     r.attemptsMax || 0,
+  //     status,
+  //     pendingFrom,
+  //     `${overallPct}%`,
+  //   ];
+  // });
+
+  // Keep your sort (same as earlier)
+  return sortRowsByTowerUnit(rows);
 }
+
+
 
 /* ---------------- Pareto ---------------- */
 const PARETO_CATEGORY_MODES = [
@@ -5297,6 +5912,15 @@ const pickPurposeInfo = (it) => {
 
 // ✅ Pareto: Select all / Unselect all for flats
 
+const [projectBuildings, setProjectBuildings] = useState([]);
+
+useEffect(() => {
+  if (!id) return;
+  axios
+    .get(`${API_BASE}/projects/buildings/by_project/${id}/`, { headers: authHeaders() })
+    .then((res) => setProjectBuildings(Array.isArray(res.data) ? res.data : []))
+    .catch(() => setProjectBuildings([]));
+}, [id]);
 
 const groupItemsByPurpose = (items = []) => {
   const map = new Map();
@@ -5471,6 +6095,7 @@ const newPurposeMap = {};
     });
     return Array.from(s);
   }, [stats]);
+  
 
   const buildingNameMap = useMemo(() => {
     const map = new Map();
@@ -5479,6 +6104,10 @@ const newPurposeMap = {};
       if (!bid) return;
       map.set(String(bid), String(b.name || b.title || b.building_name || `Building #${bid}`));
     });
+    (projectBuildings || []).forEach((b) => {
+    if (!b?.id) return;
+    map.set(String(b.id), String(b.name || `Building #${b.id}`));
+  });
 
     const items = Array.isArray(stats?.items) ? stats.items : [];
     items.forEach((it) => {
@@ -5490,7 +6119,7 @@ const newPurposeMap = {};
     });
 
     return map;
-  }, [stats]);
+  }, [stats,projectBuildings]);
 
   const buildingOptions = useMemo(
     () => Array.from(buildingNameMap.entries()).map(([id, label]) => ({ id, label })),
@@ -5741,19 +6370,21 @@ const handleExport = () => {
     });
 
     return {
-      sheetName: g.label,
-      leftTitle: g.label,
-      rightTitle: g.label,
-      hotoRows,
-      snaggingRows,
-    };
+  sheetName: g.label,
+  rightTitle: g.label,
+  snaggingRows,
+  rightOnly: true, // ✅ ADD THIS
+};
+
   });
 
   exportReportNewExcel({
-    sections,
-    fileName: `Report - ${projectName}.xlsx`,
-    items: workingItems, // optional raw sheet
-  });
+  sections,
+  fileName: `Report - ${projectName}.xlsx`,
+  items: workingItems,
+  buildingNameMap, // ✅ NEW (so Raw Items gets names)
+});
+
 };
 
 const itemsForFlatOptions = useMemo(() => {
@@ -6850,7 +7481,12 @@ onChange={(e) =>
 
         <Bar dataKey="completed" fill={CHART_COLORS.success} name="Completed" label={<BarValueLabel />} />
         <Bar dataKey="pending_checker" fill={CHART_COLORS.secondary} name="Pending Checker" label={<BarValueLabel />} />
-        <Bar dataKey="pending_for_inspector" fill={CHART_COLORS.warning} name="Pending Inspector" label={<BarValueLabel />} />
+<Bar
+  dataKey="pending_for_inspector"
+  fill={CHART_COLORS.warning}
+  name="Pending For Checker"
+  label={<BarValueLabel />}
+/>
         <Bar dataKey="not_started" fill={CHART_COLORS.danger} name="Not Started" label={<BarValueLabel />} />
       </BarChart>
     </ResponsiveContainer>
@@ -7153,7 +7789,7 @@ onChange={(e) =>
                   { label: "Total Activity (7d)", value: recentActivity.total },
                   { label: "Completed", value: recentActivity.counts.completed || 0 },
                   { label: "Pending Checker", value: recentActivity.counts.pending_checker || 0 },
-                  { label: "Pending Inspector", value: recentActivity.counts.pending_for_inspector || 0 },
+{ label: "Pending For Checker", value: recentActivity.counts.pending_for_inspector || 0 },
                 ].map((x, idx) => (
                   <Card theme={theme} className="p-5" key={idx}>
                     <div className="text-[11px] font-bold uppercase" style={{ color: subText }}>
