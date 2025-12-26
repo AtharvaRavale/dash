@@ -7783,7 +7783,7 @@ onChange={(e) =>
             )}
 
             {/* Recent activity */}
-            {recentActivity && (
+            {/* {recentActivity && (
               <div className="grid gap-4 md:grid-cols-4">
                 {[
                   { label: "Total Activity (7d)", value: recentActivity.total },
@@ -7800,7 +7800,7 @@ onChange={(e) =>
                 ))}
               </div>
               
-            )}
+            )} */}
             
 
             {/* Flat hotspots */}
@@ -8041,7 +8041,7 @@ onChange={(e) =>
             </Card>
 
             {/* Roles & Access Overview */}
-            {(configAndActivity.coverageList?.length ||
+            {/* {(configAndActivity.coverageList?.length ||
               configAndActivity.inactiveAssignments?.length ||
               configAndActivity.unconfiguredActivity?.length ||
               configByUser.length) && (
@@ -8122,7 +8122,7 @@ onChange={(e) =>
                   </Card>
                 )}
               </div>
-            )}
+            )} */}
 
             {/* Detailed Item View */}
             <Card theme={theme} className="overflow-hidden">
