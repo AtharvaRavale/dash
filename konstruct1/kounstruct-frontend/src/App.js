@@ -190,6 +190,7 @@ import MyFormResponsesPage from "./components/MyFormResponsesPage";
 import MyFormResponseDetailPage from "./components/MyFormResponseDetailPage";
 import WIRCreatePage from "./components/WIRCreatePage";
 import WIRDetailPage from "./components/WIRDetailPage";
+// import OverviewPage from "../pages/components/OverviewPage";
 
 
 
@@ -293,6 +294,8 @@ function AppRoutes() {
           path="/PendingSupervisorItems"
           element={<PendingSupervisorItems />}
         />
+        {/* <Route path="/overview/project/:projectId" element={<ProjectOverviewPage />} /> */}
+
           <Route path="/forms" element={<FormsEnginePage />} />
           <Route path="/form-packs" element={<FormPacksPage />} />
           <Route path="/project-forms" element={<ProjectFormsAssignedPage />} />

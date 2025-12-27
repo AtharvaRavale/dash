@@ -2085,3 +2085,247 @@ export const exportWIRPdf = async (wirId, includeAttachments = true) => {
 
   return true;
 };
+
+
+
+
+
+
+
+
+// ✅ DASHBOARD: Unit Stage Role Summary (Top counters)
+
+const __pickToken = () =>
+  localStorage.getItem("ACCESS_TOKEN") ||
+  localStorage.getItem("access") ||
+  localStorage.getItem("accessToken") ||
+  "";
+
+const __clean = (v) => {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (!s || ["null", "none", "undefined"].includes(s.toLowerCase())) return null;
+  return v;
+};
+
+const __toCsv = (v) => {
+  if (v === null || v === undefined) return null;
+  if (Array.isArray(v)) {
+    const arr = v
+      .map((x) => __clean(x))
+      .filter((x) => x !== null && x !== undefined)
+      .map((x) => String(x).trim())
+      .filter(Boolean);
+    return arr.length ? arr.join(",") : null;
+  }
+  return __clean(v);
+};
+
+const __buildSummaryParams = (p = {}) => {
+  // supports: project_id(s), stage_id(s), building_id(s)/tower_id(s), unit_id(s)/flat_id(s), pending_from
+  const params = {};
+
+  // mandatory
+  const project = __toCsv(p.project_id ?? p.project_ids);
+  if (!project) throw new Error("project_id is required");
+  params.project_id = project;
+
+  const stage = __toCsv(p.stage_id ?? p.stage_ids);
+  if (stage) params.stage_id = stage;
+
+  const building = __toCsv(
+    p.building_id ?? p.building_ids ?? p.tower_id ?? p.tower_ids
+  );
+  if (building) params.building_id = building;
+
+  const unit = __toCsv(p.unit_id ?? p.unit_ids ?? p.flat_id ?? p.flat_ids);
+  if (unit) params.unit_id = unit;
+
+  const pendingFrom = __toCsv(
+    p.pending_from ?? p.pending_from_roles ?? p.role ?? p.roles
+  );
+  if (pendingFrom) params.pending_from = pendingFrom;
+
+  // passthrough flags
+  if (p.debug != null) params.debug = p.debug;
+  if (p.export != null) params.export = p.export;
+
+  return params;
+};
+
+// ✅ JSON fetch
+export const getUnitStageRoleSummary = async (payload = {}) => {
+  const token = __pickToken();
+  const params = __buildSummaryParams(payload);
+
+  return NEWchecklistInstance.get("/api/dashboard/unit-stage-role-summary/", {
+    params,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+};
+
+// ✅ Excel export download (direct)
+export const exportUnitStageRoleSummaryExcel = async (
+  payload = {},
+  filename = "unit_stage_role_summary.xlsx"
+) => {
+  const token = __pickToken();
+  const params = { ...__buildSummaryParams(payload), export: true };
+
+  const res = await NEWchecklistInstance.get(
+    "/api/dashboard/unit-stage-role-summary/",
+    {
+      params,
+      responseType: "blob",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    }
+  );
+
+  // try filename from header
+  const dispo = res.headers?.["content-disposition"];
+  const name =
+    filenameFromDisposition(dispo) ||
+    `unit_stage_role_summary_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+  downloadBlob(res.data, name);
+  return true;
+};
+
+
+
+
+
+
+
+
+
+
+// ✅ WIP Breakdown (counts + optional rows)
+export const getUnitWorkInProgressBreakdown = (params = {}) =>
+  NEWchecklistInstance.get("/api/unit-work-in-progress-breakdown/", { params });
+
+// ✅ WIP Breakdown Excel export
+export const exportUnitWorkInProgressBreakdownExcel = async (
+  params = {},
+  filename = "unit_work_in_progress_breakdown.xlsx"
+) => {
+  const res = await NEWchecklistInstance.get("/api/unit-work-in-progress-breakdown/", {
+    params: { ...params, export: true },   // ✅ keep include_rows/limit from params
+    responseType: "blob",
+  });
+
+  const dispo = res.headers?.["content-disposition"];
+  const name =
+    filenameFromDisposition(dispo) ||
+    `unit_wip_breakdown_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+  downloadBlob(res.data, name);
+  return true;
+};
+
+// ✅ Unit Checklist Report (JSON)
+export const getUnitChecklistReport = (params = {}) =>
+  NEWchecklistInstance.get("/unit-checklist-report/", { params });
+
+// ✅ Unit Checklist Report Excel export (server generated)
+export const exportUnitChecklistReportExcel = async (params = {}) => {
+  const token =
+    localStorage.getItem("ACCESS_TOKEN") ||
+    localStorage.getItem("access") ||
+    localStorage.getItem("accessToken") ||
+    "";
+
+  const res = await NEWchecklistInstance.get("/unit-checklist-report/", {
+    params: { ...params, export: true },
+    responseType: "blob",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+
+  // ✅ If backend returns JSON error inside blob
+  const contentType = res.headers?.["content-type"] || "";
+  if (contentType.includes("application/json")) {
+    const text = await res.data.text();
+    let msg = "Export failed";
+    try {
+      const j = JSON.parse(text);
+      msg = j?.detail || j?.message || msg;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  const dispo = res.headers?.["content-disposition"];
+  const name =
+    filenameFromDisposition(dispo) ||
+    `unit_checklist_report_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+  downloadBlob(res.data, name);
+  return true;
+};
+
+
+// // --- ADD THIS IN api.js ---
+
+// import axios from "axios";
+
+// const CHECKLIST_BASE_URL = "https://konstruct.world/checklists";
+
+// // small axios client for checklist service
+// const checklistClient = axios.create({
+//   baseURL: CHECKLIST_BASE_URL,
+// });
+
+// // attach token automatically
+// checklistClient.interceptors.request.use((config) => {
+//   const token =
+//     localStorage.getItem("accessToken") ||
+//     localStorage.getItem("ACCESS_TOKEN") ||
+//     localStorage.getItem("token");
+
+//   if (token) config.headers.Authorization = `Bearer ${token}`;
+//   config.headers.Accept = "application/json";
+//   return config;
+// });
+
+// // helpers for download
+// // const filenameFromDisposition = (dispo) => {
+// //   try {
+// //     if (!dispo) return null;
+// //     const m = String(dispo).match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i);
+// //     if (!m || !m[1]) return null;
+// //     return decodeURIComponent(m[1]);
+// //   } catch {
+// //     return null;
+// //   }
+// // };
+
+// // const downloadBlob = (blob, filename) => {
+// //   const url = window.URL.createObjectURL(blob);
+// //   const a = document.createElement("a");
+// //   a.href = url;
+// //   a.download = filename || "report.xlsx";
+// //   document.body.appendChild(a);
+// //   a.click();
+// //   a.remove();
+// //   window.URL.revokeObjectURL(url);
+// // };
+
+// // ✅ JSON response (optional use)
+// export const getUnitChecklistReport = (params = {}) => {
+//   return checklistClient.get("/api/unit-checklist-report/", { params });
+// };
+
+// // ✅ Excel download (this is what you need)
+// export const exportUnitChecklistReportExcel = async (params = {}) => {
+//   const res = await checklistClient.get("/api/unit-checklist-report/", {
+//     params: { ...params, export: true },
+//     responseType: "blob",
+//   });
+
+//   const dispo = res.headers?.["content-disposition"];
+//   const name =
+//     filenameFromDisposition(dispo) ||
+//     `unit_checklist_report_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+//   downloadBlob(res.data, name);
+//   return true;
+// };
