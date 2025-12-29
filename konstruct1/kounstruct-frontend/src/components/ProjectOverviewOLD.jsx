@@ -4732,20 +4732,14 @@
 // export default ProjectOverview;
 
 
-
-
-
-
-
 // src/components/ProjectOverview.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { useTheme } from "../ThemeContext";
 import { exportReportNewExcel } from "../utils/exportReportNewExcel";
 import ProjectOverviewKpi from "./ProjectOverviewKpi";
-
 
 import {
   ResponsiveContainer,
@@ -4784,10 +4778,7 @@ const authHeaders = () => ({
 /* ---------------- utils ---------------- */
 const isStartedItem = (item) => {
   const st = String(item?.item_status || "").toLowerCase();
-  // If API already sends "started"
   if (st === "started") return true;
-
-  // Otherwise: has any submission and not completed/not_started
   const hasSub = !!item?.latest_submission;
   return hasSub && st !== "completed" && st !== "not_started";
 };
@@ -4797,13 +4788,9 @@ const matchesStatusFilter = (item, status) => {
   if (!s) return true;
 
   const st = String(item?.item_status || "").toLowerCase();
-
   if (s === "started") return isStartedItem(item);
   return st === s;
 };
-
-const isNumberLike = (v) =>
-  v !== null && v !== undefined && String(v).trim() !== "" && !Number.isNaN(Number(v));
 
 function safeNumber(n, fallback = 0) {
   if (typeof n === "number" && !Number.isNaN(n)) return n;
@@ -4824,26 +4811,23 @@ function fmtInt(n) {
 
 function titleCaseStatus(status) {
   if (!status) return "-";
-
   const s = String(status).toLowerCase();
-
-  // ✅ Rename only (value same rahega)
   if (s === "pending_for_inspector") return "Pending For Checker";
-
   return s
     .split("_")
     .map((x) => x.charAt(0).toUpperCase() + x.slice(1))
     .join(" ");
 }
 
-
 function statusColor(status) {
   const s = String(status || "").toLowerCase();
   if (s === "completed") return { text: "#047857", chartColor: "#10b981" };
   if (s === "pending_checker" || s === "pending_for_checker")
     return { text: "#1d4ed8", chartColor: "#3b82f6" };
-  if (s === "pending_for_inspector") return { text: "#c2410c", chartColor: "#f97316" };
-  if (s === "not_started" || s === "created") return { text: "#475569", chartColor: "#94a3b8" };
+  if (s === "pending_for_inspector")
+    return { text: "#c2410c", chartColor: "#f97316" };
+  if (s === "not_started" || s === "created")
+    return { text: "#475569", chartColor: "#94a3b8" };
   return { text: "#475569", chartColor: "#94a3b8" };
 }
 
@@ -4893,7 +4877,8 @@ function buildSummaryFromItems(items) {
         byStageMap[stageId] = stageRec;
       }
       stageRec.items += 1;
-      stageRec.by_latest_status[status] = (stageRec.by_latest_status[status] || 0) + 1;
+      stageRec.by_latest_status[status] =
+        (stageRec.by_latest_status[status] || 0) + 1;
     }
 
     const rolesObj = item.roles || {};
@@ -4923,50 +4908,25 @@ function buildSummaryFromItems(items) {
     roles: roleSummary,
   };
 }
-// Helpers
-const norm = (s) => String(s || "").toLowerCase();
-// ✅ do NOT "includes('snag')" guess. Only trust actual flags/types if present.
-const isSnagPoint = (it) => {
-  const v =
-    it?.is_snag_point ??
-    it?.is_snag ??
-    it?.snag_point ??
-    it?.snag ??
-    it?.item?.is_snag_point ??
-    null;
-
-  if (v === true) return true;
-  if (v === false) return false;
-
-  // fallback only if backend sends a strict type
-  const t = String(it?.item_type || it?.type || it?.item_kind || "").toLowerCase();
-  return t === "snag" || t === "snag_point";
-};
 
 const pendingFromLabel = (statusCounts = {}) => {
-  // 1) Not started -> initializer
-  if ((statusCounts.not_started || 0) > 0 || (statusCounts.created || 0) > 0) return "Initializer";
-
-  // 2) Pending for maker / started -> maker
+  if ((statusCounts.not_started || 0) > 0 || (statusCounts.created || 0) > 0)
+    return "Initializer";
   if (
     (statusCounts.pending_for_maker || 0) > 0 ||
     (statusCounts.pending_maker || 0) > 0 ||
     (statusCounts.started || 0) > 0
-  ) return "Maker";
-
-  // 3) Inspector bucket
+  )
+    return "Maker";
   if ((statusCounts.pending_for_inspector || 0) > 0) return "Inspector";
-
-  // 4) Checker bucket
   if (
     (statusCounts.pending_checker || 0) > 0 ||
     (statusCounts.pending_for_checker || 0) > 0
-  ) return "Checker";
-
+  )
+    return "Checker";
   return "";
 };
 
-const overallStatusLabel = (pendingCount) => (pendingCount > 0 ? "Pending" : "Completed");
 const sortRowsByTowerUnit = (rows = []) => {
   const unitNum = (v) => {
     const n = Number(String(v ?? "").replace(/[^\d]/g, ""));
@@ -4997,62 +4957,42 @@ export function buildHotoRowsFromItems(
   const map = new Map();
 
   (items || []).forEach((it) => {
-    // ❌ remove this line:
-    // if (!isSnagPoint(it)) return;
-
     const loc = it.location || {};
     const flatId = loc.flat_id;
     const meta = flatId ? flatLookup?.[flatId] : null;
+
     const towerRaw =
-  loc.tower_name ||
-  loc.building_name ||
-  (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
-  (loc.building_id ? `Building #${loc.building_id}` : "");
+      loc.tower_name ||
+      loc.building_name ||
+      (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
+      (loc.building_id ? `Building #${loc.building_id}` : "");
 
-const unitRaw = meta?.number || flatId || "";
+    const unitRaw = meta?.number || flatId || "";
 
-const stageId = it.checklist?.stage_id || "";
-const stageRaw = stageMap?.[stageId] || stageId || "";
+    const stageId = it.checklist?.stage_id || "";
+    const stageRaw = stageMap?.[stageId] || stageId || "";
 
-const checklistRaw = getChecklistLabel
-  ? getChecklistLabel(it)
-  : it.checklist?.title || it.checklist?.name || "";
+    const checklistRaw = getChecklistLabel
+      ? getChecklistLabel(it)
+      : it.checklist?.title || it.checklist?.name || "";
 
-// ✅ normalize to avoid duplicates like "Tower A " vs "Tower A"
-const tower = String(towerRaw || "").trim();
-const unitNo = String(unitRaw || "").trim();
-const stage = String(stageRaw || "").trim();
-const checklist = String(checklistRaw || "").trim();
+    const tower = String(towerRaw || "").trim();
+    const unitNo = String(unitRaw || "").trim();
+    const stage = String(stageRaw || "").trim();
+    const checklist = String(checklistRaw || "").trim();
 
-const key = `${tower}|${unitNo}|${checklist}|${stage}`;
+    const key = `${tower}|${unitNo}|${checklist}|${stage}`;
 
-
-    // const tower =
-    //   loc.tower_name ||
-    //   loc.building_name ||
-    //   (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
-    //   (loc.building_id ? `Building #${loc.building_id}` : "");
-
-    // const unitNo = meta?.number || flatId || "";
-
-    // const stageId = it.checklist?.stage_id || "";
-    // const stage = stageMap?.[stageId] || stageId || "";
-
-    // const checklist = getChecklistLabel
-    //   ? getChecklistLabel(it)
-    //   : it.checklist?.title || it.checklist?.name || "";
-
-    // const key = `${tower}|${unitNo}|${checklist}|${stage}`;
-    const rec = map.get(key) || {
-      tower,
-      unitNo,
-      checklist,
-      stage,
-      total: 0,
-      completed: 0,
-      statusCounts: {},
-    };
-
+    const rec =
+      map.get(key) || {
+        tower,
+        unitNo,
+        checklist,
+        stage,
+        total: 0,
+        completed: 0,
+        statusCounts: {},
+      };
     rec.total += 1;
 
     const st = String(it.item_status || "").toLowerCase();
@@ -5063,361 +5003,23 @@ const key = `${tower}|${unitNo}|${checklist}|${stage}`;
   });
 
   const rows = Array.from(map.values()).map((r) => {
-  const pending = r.total - r.completed;
-  return [
-    r.tower,
-    r.unitNo,
-    r.checklist,
-    r.stage,
-    r.total,
-    r.completed,
-    pending,
-    "",
-    pending > 0 ? "Pending" : "Completed",
-    pendingFromLabel(r.statusCounts),
-  ];
-});
+    const pending = r.total - r.completed;
+    return [
+      r.tower,
+      r.unitNo,
+      r.checklist,
+      r.stage,
+      r.total,
+      r.completed,
+      pending,
+      "",
+      pending > 0 ? "Pending" : "Completed",
+      pendingFromLabel(r.statusCounts),
+    ];
+  });
 
-return sortRowsByTowerUnit(rows);
-
+  return sortRowsByTowerUnit(rows);
 }
-
-// export function buildSnaggingRowsFromItems(
-//   items,
-//   { stageMap, flatLookup, buildingNameMap, getChecklistLabel } = {}
-// ) {
-//   const map = new Map();
-
-//   (items || []).forEach((it) => {
-//     const loc = it.location || {};
-//     const flatId = loc.flat_id;
-//     const meta = flatId ? flatLookup?.[flatId] : null;
-
-//     const tower =
-//       loc.tower_name ||
-//       loc.building_name ||
-//       (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
-//       (loc.building_id ? `Building #${loc.building_id}` : "");
-
-//     const unitNo = meta?.number || flatId || "";
-
-//     const stageId = it.checklist?.stage_id || "";
-//     const stage = stageMap?.[stageId] || stageId || "";
-
-//     const checklist = getChecklistLabel
-//       ? getChecklistLabel(it)
-//       : it.checklist?.title || it.checklist?.name || "";
-
-//     const key = `${tower}|${unitNo}|${checklist}|${stage}`;
-//     const rec = map.get(key) || {
-//       tower,
-//       unitNo,
-//       checklist,
-//       stage,
-
-//       // ✅ keep both, but we will mirror them
-//       totalCp: 0,
-//       doneCp: 0,
-//       totalSnag: 0,
-//       doneSnag: 0,
-
-//       statusCounts: {},
-//       attemptsMax: 0,
-//     };
-
-//     const st = String(it.item_status || "").toLowerCase();
-//     rec.statusCounts[st] = (rec.statusCounts[st] || 0) + 1;
-
-//     // ✅ IMPORTANT: CP & Snag both count the SAME items
-//     rec.totalCp += 1;
-//     rec.totalSnag += 1;
-
-//     if (st === "completed") {
-//       rec.doneCp += 1;
-//       rec.doneSnag += 1;
-//     }
-
-//     const att = Number(it?.latest_submission?.attempts || 0);
-//     if (!Number.isNaN(att)) rec.attemptsMax = Math.max(rec.attemptsMax, att);
-
-//     map.set(key, rec);
-//   });
-
-//   return Array.from(map.values()).map((r) => {
-//     const pendingCp = r.totalCp - r.doneCp;
-//     const pendingSnag = r.totalSnag - r.doneSnag;
-
-//     // ✅ now these will always be identical
-//     const cpPct = r.totalCp > 0 ? Math.round((r.doneCp / r.totalCp) * 100) : 0;
-//     const snagPct = r.totalSnag > 0 ? Math.round((r.doneSnag / r.totalSnag) * 100) : 0;
-
-//     // ✅ overall also same (use base totals, no double-count confusion)
-//     const overallPct = r.totalCp > 0 ? Math.round((r.doneCp / r.totalCp) * 100) : 0;
-
-//     const pendingAll = pendingCp; // same as pendingSnag
-
-//     return [
-//       r.tower,
-//       r.unitNo,
-//       r.checklist,
-//       r.stage,
-
-//       r.totalCp,
-//       r.doneCp,
-//       pendingCp,
-//       `${cpPct}%`,
-
-//       r.totalSnag,
-//       r.doneSnag,
-//       pendingSnag,
-//       `${snagPct}%`,
-
-//       r.attemptsMax || 0,
-//       pendingAll > 0 ? "Pending" : "Completed",
-//       pendingFromLabel(r.statusCounts),
-//       `${overallPct}%`,
-//     ];
-//   });
-// }
-
-// export function buildSnaggingRowsFromItems(
-//   items,
-//   { stageMap, flatLookup, buildingNameMap, getChecklistLabel } = {}
-// ) {
-//   const map = new Map();
-
-//   const norm = (s) => String(s || "").toLowerCase();
-
-//   // 👇 tweak these if your backend uses different status names
-//   const MAKER_PENDING_STATUSES = new Set([
-//     "pending_for_maker",
-//     "pending_maker",
-//     "started",
-//   ]);
-
-//   const CHECKER_PENDING_STATUSES = new Set([
-//     "pending_checker",
-//     "pending_for_checker",
-//     "pending_for_inspector", // you renamed this label in UI as "Pending For Checker"
-//   ]);
-
-//   const isCheckerChecked = (it) => {
-//     const latest = it?.latest_submission || {};
-//     const st = norm(it?.item_status);
-//     // primary: checked_at exists
-//     if (latest?.checked_at) return true;
-//     // fallback: if item moved past creation/not_started states
-//     if (st && st !== "created" && st !== "not_started") return true;
-//     return false;
-//   };
-
-//   const isClosed = (it) => norm(it?.item_status) === "completed";
-
-//   const getAttempts = (it) => {
-//     const n = Number(it?.latest_submission?.attempts || 0);
-//     return Number.isNaN(n) ? 0 : n;
-//   };
-
-//   // ✅ identify snag points:
-//   // 1) trust actual flags if present (your helper exists above in file)
-//   // 2) otherwise infer via statuses / attempts
-//   const isSnag = (it) => {
-//     try {
-//       if (typeof isSnagPoint === "function" && isSnagPoint(it) === true) return true;
-//     } catch {}
-
-//     const st = norm(it?.item_status);
-//     const att = getAttempts(it);
-
-//     if (MAKER_PENDING_STATUSES.has(st)) return true;
-//     if (CHECKER_PENDING_STATUSES.has(st)) return true;
-
-//     // attempts > 0 usually means checker rejected at least once (snag cycle)
-//     if (att > 0) return true;
-
-//     return false;
-//   };
-
-//   const computePendingFromAndStatus = ({
-//     cpPending,
-//     totalSnag,
-//     makerPending,
-//     checkerPending,
-//   }) => {
-//     // If checker hasn't even checked all checkpoints yet
-//     if (cpPending > 0) return { status: "Pending by Checker", pendingFrom: "Checker" };
-
-//     // If snag exists -> maker/checker derived status
-//     if (totalSnag > 0) {
-//       if (makerPending > 0) return { status: "Pending by Maker", pendingFrom: "Maker" };
-//       if (checkerPending > 0) return { status: "Pending by Checker", pendingFrom: "Checker" };
-//       return { status: "Completed", pendingFrom: "" };
-//     }
-
-//     // No snags & checker finished
-//     return { status: "Completed", pendingFrom: "" };
-//   };
-
-//   (items || []).forEach((it) => {
-//     const loc = it.location || {};
-//     const flatId = loc.flat_id;
-//     const meta = flatId ? flatLookup?.[flatId] : null;
-
-//     // const tower =
-//     //   loc.tower_name ||
-//     //   loc.building_name ||
-//     //   (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
-//     //   (loc.building_id ? `Building #${loc.building_id}` : "");
-
-//     // const unitNo = meta?.number || flatId || "";
-
-//     // const stageId = it.checklist?.stage_id || "";
-//     // const stage = stageMap?.[stageId] || stageId || "";
-
-//     // const checklist = getChecklistLabel
-//     //   ? getChecklistLabel(it)
-//     //   : it.checklist?.title || it.checklist?.name || "";
-
-//     // const key = `${tower}|${unitNo}|${checklist}|${stage}`;
-//     const towerRaw =
-//   loc.tower_name ||
-//   loc.building_name ||
-//   (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
-//   (loc.building_id ? `Building #${loc.building_id}` : "");
-
-// const unitRaw = meta?.number || flatId || "";
-
-// const stageId = it.checklist?.stage_id || "";
-// const stageRaw = stageMap?.[stageId] || stageId || "";
-
-// const checklistRaw = getChecklistLabel
-//   ? getChecklistLabel(it)
-//   : it.checklist?.title || it.checklist?.name || "";
-
-// // ✅ normalize
-// const tower = String(towerRaw || "").trim();
-// const unitNo = String(unitRaw || "").trim();
-// const stage = String(stageRaw || "").trim();
-// const checklist = String(checklistRaw || "").trim();
-
-// const key = `${tower}|${unitNo}|${checklist}|${stage}`;
-
-
-//     const rec = map.get(key) || {
-//       tower,
-//       unitNo,
-//       checklist,
-//       stage,
-
-//       // totals
-//       totalCp: 0,
-//       checkerCheckDone: 0,
-
-//       totalSnag: 0,
-//       snagRejected: 0, // same bucket count
-
-//       makerPending: 0,
-//       checkerPending: 0,
-//       checkerDone: 0,
-
-//       // for overall
-//       nonSnagChecked: 0,
-
-//       attemptsMax: 0,
-//     };
-
-//     rec.totalCp += 1;
-
-//     const st = norm(it.item_status);
-//     const checked = isCheckerChecked(it);
-//     if (checked) rec.checkerCheckDone += 1;
-
-//     const att = getAttempts(it);
-//     rec.attemptsMax = Math.max(rec.attemptsMax, att);
-
-//     const snag = isSnag(it);
-//     if (snag) {
-//       rec.totalSnag += 1;
-//       rec.snagRejected += 1;
-
-//       // maker pending = currently with maker
-//       if (MAKER_PENDING_STATUSES.has(st)) {
-//         rec.makerPending += 1;
-//       } else if (!it?.latest_submission?.maker_at && !isClosed(it)) {
-//         // fallback: if maker never submitted and not closed, assume with maker
-//         rec.makerPending += 1;
-//       }
-
-//       // checker pending = currently with checker after maker submits
-//       if (CHECKER_PENDING_STATUSES.has(st)) {
-//         rec.checkerPending += 1;
-//       }
-
-//       // closed by checker
-//       if (isClosed(it)) rec.checkerDone += 1;
-//     } else {
-//       // non-snag: count done for overall when checker checked
-//       if (checked) rec.nonSnagChecked += 1;
-//     }
-
-//     map.set(key, rec);
-//   });
-
-//     const rows = Array.from(map.values()).map((r) => {
-//     const cpPending = r.totalCp - r.checkerCheckDone;
-//     const checkerCheckPct =
-//       r.totalCp > 0 ? Math.round((r.checkerCheckDone / r.totalCp) * 100) : 0;
-
-//     const makerDone = r.totalSnag - r.makerPending;
-//     const makerPct =
-//       r.totalSnag > 0 ? Math.round((makerDone / r.totalSnag) * 100) : 0;
-
-//     const checkerPct =
-//       r.totalSnag > 0 ? Math.round((r.checkerDone / r.totalSnag) * 100) : 0;
-
-//     const { status, pendingFrom } = computePendingFromAndStatus({
-//       cpPending,
-//       totalSnag: r.totalSnag,
-//       makerPending: r.makerPending,
-//       checkerPending: r.checkerPending,
-//     });
-
-//     const overallDone = r.nonSnagChecked + r.checkerDone;
-//     const overallPct =
-//       r.totalCp > 0 ? Math.round((overallDone / r.totalCp) * 100) : 0;
-
-//     return [
-//       r.tower,
-//       r.unitNo,
-//       r.checklist,
-//       r.stage,
-
-//       r.totalCp,
-//       r.checkerCheckDone,
-//       cpPending,
-//       `${checkerCheckPct}%`,
-
-//       r.totalSnag,
-//       r.snagRejected,
-
-//       makerDone,
-//       r.makerPending,
-//       `${makerPct}%`,
-
-//       r.checkerDone,
-//       r.checkerPending,
-//       `${checkerPct}%`,
-
-//       r.attemptsMax || 0,
-//       status,
-//       pendingFrom,
-//       `${overallPct}%`,
-//     ];
-//   });
-
-//   return sortRowsByTowerUnit(rows);
-// }
-
 
 export function buildSnaggingRowsFromItems(
   items,
@@ -5434,8 +5036,7 @@ export function buildSnaggingRowsFromItems(
         (loc.building_id ? `Building #${loc.building_id}` : "")) || ""
     ).trim();
 
-  const unitLabel = (flatId, meta) =>
-    String(meta?.number || flatId || "").trim();
+  const unitLabel = (flatId, meta) => String(meta?.number || flatId || "").trim();
 
   const stageLabel = (it) => {
     const sid = it?.checklist?.stage_id;
@@ -5467,50 +5068,34 @@ export function buildSnaggingRowsFromItems(
 
     const key = `${tower}|${unitNo}|${checklist}|${stage}`;
 
-    const rec = map.get(key) || {
-      tower,
-      unitNo,
-      checklist,
-      stage,
-
-      // ✅ Base
-      totalCp: 0,
-
-      // ✅ Checker initial check
-      checkerChecked: 0, // checked (accepted OR rejected)
-      cpPending: 0,       // derived later
-
-      // ✅ Open/total snags
-      totalSnagOpen: 0,   // derived later
-
-      // ✅ Rejected (actual snags raised by checker)
-      rejectedTotal: 0,
-
-      // ✅ Maker cycle on rejected
-      makerPending: 0,
-      makerDone: 0,
-
-      // ✅ Checker re-check cycle (only after maker submits)
-      checkerPending: 0,
-      checkerDone: 0,
-
-      attemptsMax: 0,
-    };
+    const rec =
+      map.get(key) || {
+        tower,
+        unitNo,
+        checklist,
+        stage,
+        totalCp: 0,
+        checkerChecked: 0,
+        rejectedTotal: 0,
+        makerPending: 0,
+        makerDone: 0,
+        checkerPending: 0,
+        checkerDone: 0,
+        attemptsMax: 0,
+      };
 
     rec.totalCp += 1;
 
     const st = norm(it?.item_status);
     const latest = it?.latest_submission || {};
 
-    const checkedAt = toTime(latest.checked_at); // checker action time
-    const makerAt = toTime(latest.maker_at);     // maker submit time
+    const checkedAt = toTime(latest.checked_at);
+    const makerAt = toTime(latest.maker_at);
     const attempts = Number(latest.attempts || 0);
     rec.attemptsMax = Math.max(rec.attemptsMax, Number.isNaN(attempts) ? 0 : attempts);
 
     const isClosed = st === "completed";
 
-    // ✅ Checker "checked" = accepted OR rejected (once checker touches)
-    // Prefer checked_at, fallback by status
     const checkerTouched =
       !!checkedAt ||
       isClosed ||
@@ -5522,8 +5107,6 @@ export function buildSnaggingRowsFromItems(
 
     if (checkerTouched) rec.checkerChecked += 1;
 
-    // ✅ "Rejected by checker" = attempts>0 (true snag raised)
-    // Fallback: if status shows maker/checker cycle but attempts missing.
     const everRejected =
       attempts > 0 ||
       st === "pending_for_maker" ||
@@ -5534,179 +5117,90 @@ export function buildSnaggingRowsFromItems(
     if (everRejected) {
       rec.rejectedTotal += 1;
 
-      // ✅ Decide current bucket using timeline (more accurate than guessing)
-      // If maker has NOT submitted after last checker action -> pending with maker
       if (!isClosed && (makerAt === 0 || makerAt <= checkedAt)) {
         rec.makerPending += 1;
       } else {
-        // maker has submitted (or item is closed)
         rec.makerDone += 1;
 
-        if (isClosed) {
-          rec.checkerDone += 1;
-        } else {
-          // maker submitted but checker hasn't closed yet -> pending with checker
-          rec.checkerPending += 1;
-        }
+        if (isClosed) rec.checkerDone += 1;
+        else rec.checkerPending += 1;
       }
     }
 
     map.set(key, rec);
   });
+
   const rows = Array.from(map.values()).map((r) => {
-  const cpPending = r.totalCp - r.checkerChecked;
+    const cpPending = r.totalCp - r.checkerChecked;
 
-  // OPEN rejected only
-  const totalSnagPoints = r.makerPending + r.checkerPending;
-  const totalRejectedByChecker = r.rejectedTotal;
+    const totalSnagPoints = r.makerPending + r.checkerPending;
+    const totalRejectedByChecker = r.rejectedTotal;
 
-  const checkerCheckPct =
-    r.totalCp > 0 ? Math.round((r.checkerChecked / r.totalCp) * 100) : 0;
+    const checkerCheckPct =
+      r.totalCp > 0 ? Math.round((r.checkerChecked / r.totalCp) * 100) : 0;
 
-  const makerDen = r.makerDone + r.makerPending;
-  const makerPct = makerDen > 0 ? Math.round((r.makerDone / makerDen) * 100) : 0;
+    const makerDen = r.makerDone + r.makerPending;
+    const makerPct = makerDen > 0 ? Math.round((r.makerDone / makerDen) * 100) : 0;
 
-  const checkerDen = r.checkerDone + r.checkerPending;
-  const checkerPct = checkerDen > 0 ? Math.round((r.checkerDone / checkerDen) * 100) : 0;
+    const checkerDen = r.checkerDone + r.checkerPending;
+    const checkerPct =
+      checkerDen > 0 ? Math.round((r.checkerDone / checkerDen) * 100) : 0;
 
-  let status = "Completed";
-  let pendingFrom = "";
-  if (cpPending > 0) {
-    status = "Pending by Checker";
-    pendingFrom = "Checker";
-  } else if (r.makerPending > 0) {
-    status = "Pending by Maker";
-    pendingFrom = "Maker";
-  } else if (r.checkerPending > 0) {
-    status = "Pending by Checker";
-    pendingFrom = "Checker";
-  }
+    let status = "Completed";
+    let pendingFrom = "";
+    if (cpPending > 0) {
+      status = "Pending by Checker";
+      pendingFrom = "Checker";
+    } else if (r.makerPending > 0) {
+      status = "Pending by Maker";
+      pendingFrom = "Maker";
+    } else if (r.checkerPending > 0) {
+      status = "Pending by Checker";
+      pendingFrom = "Checker";
+    }
 
-  const overallDone = r.totalCp - (cpPending + totalSnagPoints);
-  const overallPct = r.totalCp > 0 ? Math.round((overallDone / r.totalCp) * 100) : 0;
+    const overallDone = r.totalCp - (cpPending + totalSnagPoints);
+    const overallPct =
+      r.totalCp > 0 ? Math.round((overallDone / r.totalCp) * 100) : 0;
 
-  return [
-    r.tower,
-    r.unitNo,
-    r.checklist,
-    r.stage,
+    return [
+      r.tower,
+      r.unitNo,
+      r.checklist,
+      r.stage,
 
-    r.totalCp,
-    r.checkerChecked,
-    cpPending,
-    `${checkerCheckPct}%`,          // ✅ THIS WAS MISSING (col 7)
+      r.totalCp,
+      r.checkerChecked,
+      cpPending,
+      `${checkerCheckPct}%`,
 
-    totalSnagPoints,               // col 8
-    totalRejectedByChecker,        // col 9
+      totalSnagPoints,
+      totalRejectedByChecker,
 
-    r.makerDone,                   // col 10
-    r.makerPending,                // col 11
-    `${makerPct}%`,                // col 12
+      r.makerDone,
+      r.makerPending,
+      `${makerPct}%`,
 
-    r.checkerDone,                 // col 13
-    r.checkerPending,              // col 14
-    `${checkerPct}%`,              // col 15
+      r.checkerDone,
+      r.checkerPending,
+      `${checkerPct}%`,
 
-    r.attemptsMax || 0,            // col 16
-    status,                        // col 17
-    pendingFrom,                   // col 18
-    `${overallPct}%`,              // col 19
-  ];
-});
+      r.attemptsMax || 0,
+      status,
+      pendingFrom,
+      `${overallPct}%`,
+    ];
+  });
 
-  // const rows = Array.from(map.values()).map((r) => {
-  //   const cpPending = r.totalCp - r.checkerChecked;
-
-  //   // ✅ Open points (tumhari language: "pending wale points")
-  //   // (not yet checked by checker) + (rejected pending with maker) + (maker submitted but checker pending)
-  //   const totalSnagOpen = cpPending + r.makerPending + r.checkerPending;
-
-  //   // ✅ Maker %
-  //   const makerDen = r.makerDone + r.makerPending; // = rejectedTotal basically
-  //   const makerPct = makerDen > 0 ? Math.round((r.makerDone / makerDen) * 100) : 0;
-
-  //   // ✅ Checker %
-  //   const checkerDen = r.checkerDone + r.checkerPending; // only after maker submit
-  //   const checkerPct = checkerDen > 0 ? Math.round((r.checkerDone / checkerDen) * 100) : 0;
-
-  //   // ✅ Status / Pending From
-  //   let status = "Completed";
-  //   let pendingFrom = "";
-  //   if (cpPending > 0) {
-  //     status = "Pending by Checker";
-  //     pendingFrom = "Checker";
-  //   } else if (r.makerPending > 0) {
-  //     status = "Pending by Maker";
-  //     pendingFrom = "Maker";
-  //   } else if (r.checkerPending > 0) {
-  //     status = "Pending by Checker";
-  //     pendingFrom = "Checker";
-  //   }
-
-  //   // ✅ Overall %
-  //   const openAll = totalSnagOpen;
-  //   const overallDone = r.totalCp - openAll;
-  //   const overallPct = r.totalCp > 0 ? Math.round((overallDone / r.totalCp) * 100) : 0;
-
-  //   const checkerCheckPct = r.totalCp > 0 ? Math.round((r.checkerChecked / r.totalCp) * 100) : 0;
-
-  //   return [
-  //     r.tower,
-  //     r.unitNo,
-  //     r.checklist,
-  //     r.stage,
-
-  //     r.totalCp,
-  //     r.checkerChecked,
-  //     cpPending,
-  //     `${checkerCheckPct}%`,
-
-  //     totalSnagOpen,        // ✅ Total Snag Points (open/pending)
-  //     r.rejectedTotal,      // ✅ Snag Rejected by Checker (TRUE rejected)
-
-  //     r.makerDone,
-  //     r.makerPending,
-  //     `${makerPct}%`,
-
-  //     r.checkerDone,
-  //     r.checkerPending,
-  //     `${checkerPct}%`,
-
-  //     r.attemptsMax || 0,
-  //     status,
-  //     pendingFrom,
-  //     `${overallPct}%`,
-  //   ];
-  // });
-
-  // Keep your sort (same as earlier)
   return sortRowsByTowerUnit(rows);
 }
 
-
-
 /* ---------------- Pareto ---------------- */
-const PARETO_CATEGORY_MODES = [
-  // { value: "room", label: "Room Category" },
-  // { value: "flatType", label: "Flat Type" },
-  { value: "checklist", label: "Checklist Title" },
-  // { value: "question", label: "Question" },
-];
+const PARETO_CATEGORY_MODES = [{ value: "checklist", label: "Checklist Title" }];
 
 function getParetoCategoryLabel(item, flatLookup, mode) {
   const loc = item.location || {};
   const cl = item.checklist || {};
-
-  if (mode === "room") {
-    const label = loc.room_category || loc.room_type || loc.room || null;
-    return label || "Unmapped Room";
-  }
-
-  if (mode === "flatType") {
-    const flatId = loc.flat_id;
-    const meta = flatId ? flatLookup[flatId] : null;
-    return meta?.typeName || (meta?.number ? `Flat ${meta.number}` : null) || "Unmapped Flat Type";
-  }
 
   if (mode === "checklist") {
     const label =
@@ -5733,12 +5227,8 @@ function getParetoCategoryLabel(item, flatLookup, mode) {
     return "Unmapped Checklist";
   }
 
-  if (mode === "question") {
-    const q = item.item_title || item.question || cl.question_text || null;
-    return q || `Unmapped Question (${item.item_id || "N/A"})`;
-  }
-
-  return "Other";
+  const label = loc.room_category || loc.room_type || loc.room || null;
+  return label || "Other";
 }
 
 const CORE_ROLES_FOR_HEAD = [
@@ -5772,7 +5262,6 @@ const Card = ({ theme, children, className = "" }) => (
   </div>
 );
 
-
 const Label = ({ theme, children }) => (
   <div
     className="text-[11px] font-semibold mb-1"
@@ -5799,61 +5288,216 @@ const Select = ({ theme, value, onChange, children, multiple = false, className 
   </select>
 );
 
+/* ---------- Checkbox MultiSelect Dropdown (Search + Select All + Clear) ---------- */
+const MultiSelectDropdown = ({
+  theme,
+  label,
+  options,
+  value,
+  onChange,
+  placeholder = "All",
+  disabled = false,
+  className = "",
+}) => {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const ref = useRef(null);
+
+  const valSet = useMemo(() => new Set((value || []).map(String)), [value]);
+  const filtered = useMemo(() => {
+    const s = String(q || "").toLowerCase().trim();
+    if (!s) return options || [];
+    return (options || []).filter((o) => String(o.label || "").toLowerCase().includes(s));
+  }, [options, q]);
+
+  const allIds = useMemo(() => (options || []).map((o) => String(o.id)), [options]);
+  const allSelected = useMemo(() => allIds.length > 0 && allIds.every((id) => valSet.has(id)), [allIds, valSet]);
+
+  useEffect(() => {
+    const onDoc = (e) => {
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const toggleId = (id) => {
+    const next = new Set(valSet);
+    const sid = String(id);
+    if (next.has(sid)) next.delete(sid);
+    else next.add(sid);
+    onChange(Array.from(next));
+  };
+
+  const selectedCount = (value || []).length;
+
+  return (
+    <div className={`relative ${className}`} ref={ref}>
+      <Label theme={theme}>{label}</Label>
+
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((o) => !o)}
+        className="w-full h-[42px] px-3 rounded-xl border text-sm font-extrabold flex items-center justify-between gap-2"
+        style={{
+          borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+          background: theme === "dark" ? "rgba(2,6,23,0.6)" : "rgba(248,250,252,0.95)",
+          color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+          opacity: disabled ? 0.6 : 1,
+        }}
+      >
+        <span className="truncate">
+          {selectedCount === 0 ? placeholder : `${selectedCount} selected`}
+        </span>
+        <span className="text-xs" style={{ opacity: 0.8 }}>
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div
+          className="absolute z-30 mt-2 w-full rounded-2xl border shadow-xl overflow-hidden"
+          style={{
+            borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+            background: theme === "dark" ? "rgba(15,23,42,0.98)" : "rgba(255,255,255,0.98)",
+          }}
+        >
+          <div className="p-3 border-b flex items-center gap-2" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search..."
+              className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+              style={{
+                borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+                background: theme === "dark" ? "rgba(2,6,23,0.55)" : "rgba(248,250,252,0.95)",
+                color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+              }}
+            />
+          </div>
+
+          <div className="px-3 py-2 flex items-center justify-between gap-2 border-b" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+            <button
+              type="button"
+              onClick={() => onChange(allSelected ? [] : allIds)}
+              className="px-3 py-1.5 rounded-xl text-xs font-black border"
+              style={{
+                borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+                color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+              }}
+            >
+              {allSelected ? "Unselect all" : "Select all"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="px-3 py-1.5 rounded-xl text-xs font-black border"
+              style={{
+                borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+                color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+              }}
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="max-h-[260px] overflow-auto p-2">
+            {(filtered || []).length === 0 ? (
+              <div className="px-3 py-6 text-sm font-semibold opacity-70">No options</div>
+            ) : (
+              filtered.map((o) => {
+                const sid = String(o.id);
+                const checked = valSet.has(sid);
+                return (
+                  <label
+                    key={sid}
+                    className="flex items-center gap-2 px-2 py-2 rounded-xl cursor-pointer"
+                    style={{
+                      background: checked
+                        ? theme === "dark"
+                          ? "rgba(37,99,235,0.15)"
+                          : "rgba(37,99,235,0.08)"
+                        : "transparent",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleId(sid)}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm font-semibold truncate">{o.label}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+
+          <div className="p-2 border-t" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="w-full h-[40px] rounded-xl text-sm font-black border"
+              style={{
+                borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+                color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+              }}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ProjectOverview = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { theme } = useTheme();
   const location = useLocation();
+ // ✅ Donut API (unit-stage-role-summary)
+  const [unitStageSummary, setUnitStageSummary] = useState(null);
+  const [unitStageLoading, setUnitStageLoading] = useState(false);
+  const [unitStageError, setUnitStageError] = useState("");
 
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [userMap, setUserMap] = useState({});
   const [stageMap, setStageMap] = useState({});
   const [flatLookup, setFlatLookup] = useState({});
-  // const [stageMap, setStageMap] = useState({});
-const [stagePurposeMap, setStagePurposeMap] = useState({}); // ✅ add this
-// const [flatLookup, setFlatLookup] = useState({});
-
-
+  const [stagePurposeMap, setStagePurposeMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const projectFromState = location.state?.project || null;
 
   const [viewMode, setViewMode] = useState("head");
+
   const [globalFilters, setGlobalFilters] = useState({
-  buildingId: "",
-  floorId: "",     // ✅ NEW
-  flatId: "",
+    buildingId: "",
+    floorId: "",
+    flatId: "",
+    stageId: "",
+    status: "",
+    role: "",
+    flatCategory: "",
+    roomCategory: "",
+    timeWindow: "all",
+  });
 
-  stageId: "",
-  status: "",
-  role: "",
-
-  // (optional) keep these if you still want advanced filters
-  flatCategory: "",
-  roomCategory: "",
-  timeWindow: "all",
-});
-
-
-  // const [globalFilters, setGlobalFilters] = useState({
-  //   status: "",
-  //   role: "",
-  //   stageId: "",
-  //   buildingId: "",
-  //   flatId: "",          // ✅ add
-  //   flatCategory: "",
-  //   roomCategory: "",
-  //   timeWindow: "all", // all | 30d | 7d
-  // });
-
-
- const [paretoFilters, setParetoFilters] = useState({
-  categoryMode: "checklist", // ✅ match the dropdown options
-  floorIds: [],
-  focusFlatIds: [],
-});
+  const [paretoFilters, setParetoFilters] = useState({
+    categoryMode: "checklist",
+    floorIds: [],
+    focusFlatIds: [],
+  });
 
   const [questionFilters, setQuestionFilters] = useState({
     stageId: "",
@@ -5861,7 +5505,7 @@ const [stagePurposeMap, setStagePurposeMap] = useState({}); // ✅ add this
     buildingId: "",
     floorId: "",
     roomCategory: "",
-    statusBucket: "open", // open | closed | all
+    statusBucket: "open",
   });
 
   const textColor = theme === "dark" ? "#e2e8f0" : "#0f172a";
@@ -5910,67 +5554,98 @@ const [stagePurposeMap, setStagePurposeMap] = useState({}); // ✅ add this
     if (!uid) return "-";
     return userMap[uid] || `User #${uid}`;
   };
-const pickPurposeInfo = (it) => {
-  const stageId = it?.checklist?.stage_id;
-  const p = stageId ? stagePurposeMap?.[stageId] : null;
 
-  const label = p?.name
-    ? String(p.name)
-    : String(
-        it?.checklist?.purpose_name ||
-        it?.checklist?.purpose ||
-        it?.purpose_name ||
-        it?.purpose ||
-        "Unassigned"
-      );
+  const pickPurposeInfo = (it) => {
+    const stageId = it?.checklist?.stage_id;
+    const p = stageId ? stagePurposeMap?.[stageId] : null;
 
-  // ✅ key always based on label
-  return { key: label.trim().toLowerCase(), label };
-};
+    const label = p?.name
+      ? String(p.name)
+      : String(
+          it?.checklist?.purpose_name ||
+            it?.checklist?.purpose ||
+            it?.purpose_name ||
+            it?.purpose ||
+            "Unassigned"
+        );
 
-// ✅ Pareto: Select all / Unselect all for flats
+    return { key: label.trim().toLowerCase(), label };
+  };
 
-const [projectBuildings, setProjectBuildings] = useState([]);
-
+  const [projectBuildings, setProjectBuildings] = useState([]);
+  // ✅ Fetch ONLY donut data from unit-stage-role-summary API
 useEffect(() => {
   if (!id) return;
-  axios
-    .get(`${API_BASE}/projects/buildings/by_project/${id}/`, { headers: authHeaders() })
-    .then((res) => setProjectBuildings(Array.isArray(res.data) ? res.data : []))
-    .catch(() => setProjectBuildings([]));
-}, [id]);
 
-const groupItemsByPurpose = (items = []) => {
-  const map = new Map();
-  items.forEach((it) => {
-    const { key, label } = pickPurposeInfo(it);
-    const rec = map.get(key) || { key, label, items: [] };
-    rec.items.push(it);
-    map.set(key, rec);
-  });
+  const controller = new AbortController();
 
-  return Array.from(map.values()).sort(
-    (a, b) => b.items.length - a.items.length || String(a.label).localeCompare(String(b.label))
-  );
-};
+  const fetchDonut = async () => {
+    setUnitStageLoading(true);
+    setUnitStageError("");
 
-// ✅ do NOT "includes('snag')" guess. Only trust actual flags/types if present.
-// const isSnagPoint = (it) => {
-//   const v =
-//     it?.is_snag_point ??
-//     it?.is_snag ??
-//     it?.snag_point ??
-//     it?.snag ??
-//     it?.item?.is_snag_point ??
-//     null;
+    try {
+      const params = {
+        project_id: id,
+      };
 
-//   if (v === true) return true;
-//   if (v === false) return false;
+      // Optional: global filters mapped to this API (safe)
+      if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
+      if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
+      if (globalFilters.flatId) params.unit_id = globalFilters.flatId; // flat == unit
 
-//   // fallback only if backend sends a strict type
-//   const t = String(it?.item_type || it?.type || it?.item_kind || "").toLowerCase();
-//   return t === "snag" || t === "snag_point";
-// };
+      const res = await axios.get(
+        `${API_BASE}/checklists/api/dashboard/unit-stage-role-summary/`,
+        {
+          params,
+          headers: authHeaders(),
+          signal: controller.signal,
+        }
+      );
+
+      setUnitStageSummary(res.data || null);
+    } catch (err) {
+      // ignore cancel
+      const name = err?.name || "";
+      if (name === "CanceledError" || name === "AbortError") return;
+
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to load donut summary.";
+      setUnitStageError(msg);
+      setUnitStageSummary(null);
+    } finally {
+      setUnitStageLoading(false);
+    }
+  };
+
+  fetchDonut();
+
+  return () => controller.abort();
+}, [id, globalFilters.stageId, globalFilters.buildingId, globalFilters.flatId]);
+
+
+  useEffect(() => {
+    if (!id) return;
+    axios
+      .get(`${API_BASE}/projects/buildings/by_project/${id}/`, { headers: authHeaders() })
+      .then((res) => setProjectBuildings(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setProjectBuildings([]));
+  }, [id]);
+
+  const groupItemsByPurpose = (items = []) => {
+    const map = new Map();
+    items.forEach((it) => {
+      const { key, label } = pickPurposeInfo(it);
+      const rec = map.get(key) || { key, label, items: [] };
+      rec.items.push(it);
+      map.set(key, rec);
+    });
+
+    return Array.from(map.values()).sort(
+      (a, b) => b.items.length - a.items.length || String(a.label).localeCompare(String(b.label))
+    );
+  };
 
   /* ---------------- data fetch ---------------- */
   useEffect(() => {
@@ -6001,7 +5676,6 @@ const groupItemsByPurpose = (items = []) => {
         setUserMap(uMap);
         setUsers(usersRes.data || []);
 
-        // stage map by phase ids (derived from items)
         const phaseSet = new Set();
         (statsData.items || []).forEach((item) => {
           const phId = item.checklist?.phase_id;
@@ -6009,8 +5683,8 @@ const groupItemsByPurpose = (items = []) => {
         });
 
         const phaseIds = Array.from(phaseSet);
-const newStageMap = {};
-const newPurposeMap = {};
+        const newStageMap = {};
+        const newPurposeMap = {};
 
         if (phaseIds.length > 0) {
           await Promise.all(
@@ -6019,39 +5693,41 @@ const newPurposeMap = {};
                 .get(`${API_BASE}/projects/stages/by_phase/${phaseId}/`, { headers: authHeaders() })
                 .then((resp) => {
                   (resp.data || []).forEach((stage) => {
-  if (!stage || stage.id == null) return;
+                    if (!stage || stage.id == null) return;
 
-  // stage label
-  newStageMap[stage.id] =
-    stage.name ||
-    (stage.stage_name && stage.stage_name.name) ||
-    `Stage #${stage.id}`;
+                    newStageMap[stage.id] =
+                      stage.name ||
+                      (stage.stage_name && stage.stage_name.name) ||
+                      `Stage #${stage.id}`;
 
-  // ✅ purpose extraction (matches your API response)
-  const pObj =
-    stage?.purpose?.name?.purpose ||  // <-- your sample: purpose.name.purpose
-    stage?.purpose?.purpose ||
-    stage?.purpose;
+                    const pObj =
+                      stage?.purpose?.name?.purpose ||
+                      stage?.purpose?.purpose ||
+                      stage?.purpose;
 
-  const pId = pObj?.id ?? stage?.purpose?.id ?? null;
-  const pName = pObj?.name ?? pObj?.title ?? null;
+                    const pId = pObj?.id ?? stage?.purpose?.id ?? null;
+                    const pName = pObj?.name ?? pObj?.title ?? null;
 
-  if (pName || pId) {
-    newPurposeMap[stage.id] = { id: pId ? String(pId) : String(pName), name: String(pName || "Unassigned") };
-  }
-});
-
+                    if (pName || pId) {
+                      newPurposeMap[stage.id] = {
+                        id: pId ? String(pId) : String(pName),
+                        name: String(pName || "Unassigned"),
+                      };
+                    }
+                  });
                 })
                 .catch(() => {})
             )
           );
         }
+
         setStageMap(newStageMap);
         setStagePurposeMap(newPurposeMap);
-
       } catch (err) {
         const msg =
-          err?.response?.data?.detail || err?.response?.data?.message || "Failed to load project stats.";
+          err?.response?.data?.detail ||
+          err?.response?.data?.message ||
+          "Failed to load project stats.";
         setError(msg);
         toast.error(msg);
       } finally {
@@ -6074,7 +5750,9 @@ const newPurposeMap = {};
     const fetchLevelsWithFlats = async () => {
       try {
         const responses = await Promise.all(
-          buildingIds.map((bid) => axios.get(`${API_BASE}/projects/levels-with-flats/${bid}/`, { headers: authHeaders() }))
+          buildingIds.map((bid) =>
+            axios.get(`${API_BASE}/projects/levels-with-flats/${bid}/`, { headers: authHeaders() })
+          )
         );
 
         const map = {};
@@ -6113,31 +5791,39 @@ const newPurposeMap = {};
     });
     return Array.from(s);
   }, [stats]);
-  
 
   const buildingNameMap = useMemo(() => {
     const map = new Map();
     (stats?.buildings || []).forEach((b) => {
       const bid = b.id || b.building_id;
       if (!bid) return;
-      map.set(String(bid), String(b.name || b.title || b.building_name || `Building #${bid}`));
+      map.set(
+        String(bid),
+        String(b.name || b.title || b.building_name || `Building #${bid}`)
+      );
     });
+
     (projectBuildings || []).forEach((b) => {
-    if (!b?.id) return;
-    map.set(String(b.id), String(b.name || `Building #${b.id}`));
-  });
+      if (!b?.id) return;
+      map.set(String(b.id), String(b.name || `Building #${b.id}`));
+    });
 
     const items = Array.isArray(stats?.items) ? stats.items : [];
     items.forEach((it) => {
       const loc = it.location || {};
       if (!loc.building_id) return;
       const bid = String(loc.building_id);
-      const label = loc.building_name || loc.tower_name || loc.wing || map.get(bid) || `Building #${bid}`;
+      const label =
+        loc.building_name ||
+        loc.tower_name ||
+        loc.wing ||
+        map.get(bid) ||
+        `Building #${bid}`;
       map.set(bid, String(label));
     });
 
     return map;
-  }, [stats,projectBuildings]);
+  }, [stats, projectBuildings]);
 
   const buildingOptions = useMemo(
     () => Array.from(buildingNameMap.entries()).map(([id, label]) => ({ id, label })),
@@ -6166,34 +5852,10 @@ const newPurposeMap = {};
       }
     });
 
-    return Array.from(levelsMap.values()).sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    return Array.from(levelsMap.values()).sort((a, b) =>
+      String(a.label).localeCompare(String(b.label))
+    );
   }, [stats, globalFilters.buildingId, flatLookup]);
-
-  // const flatOptions = useMemo(() => {
-  //   // const items = Array.isArray(stats?.items) ? stats.items : [];
-  //   const items = Array.isArray(workingItems) ? workingItems : [];
-
-  //   const map = new Map();
-
-  //   items.forEach((it) => {
-  //     const loc = it.location || {};
-  //     const flatId = loc.flat_id;
-  //     if (!flatId) return;
-
-  //     if (globalFilters.buildingId && loc.building_id && String(loc.building_id) !== String(globalFilters.buildingId)) {
-  //       return;
-  //     }
-
-  //     if (!map.has(flatId)) {
-  //       const meta = flatLookup[flatId] || {};
-  //       const baseLabel = meta.number ? `Flat ${meta.number}` : `Flat #${flatId}`;
-  //       const label = meta.typeName ? `${baseLabel} • ${meta.typeName}` : baseLabel;
-  //       map.set(flatId, { id: String(flatId), label });
-  //     }
-  //   });
-
-  //   return Array.from(map.values()).sort((a, b) => String(a.label).localeCompare(String(b.label)));
-  // }, [stats, flatLookup, globalFilters.buildingId]);
 
   const flatCategoryOptions = useMemo(() => {
     const items = Array.isArray(stats?.items) ? stats.items : [];
@@ -6244,336 +5906,274 @@ const newPurposeMap = {};
     return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
   }, [stats]);
 
-  const questionFloorOptions = useMemo(() => {
-    const bId = questionFilters.buildingId;
-    if (!bId) return [];
-
-    const items = Array.isArray(stats?.items) ? stats.items : [];
-    const levelsMap = new Map();
-
-    items.forEach((it) => {
-      const loc = it.location || {};
-      if (!loc.flat_id) return;
-      if (!loc.building_id || String(loc.building_id) !== String(bId)) return;
-
-      const meta = flatLookup[loc.flat_id];
-      if (!meta?.levelId) return;
-
-      if (!levelsMap.has(meta.levelId)) {
-        levelsMap.set(meta.levelId, {
-          id: String(meta.levelId),
-          label: meta.levelName || `Floor #${meta.levelId}`,
-        });
-      }
-    });
-
-    return Array.from(levelsMap.values()).sort((a, b) => String(a.label).localeCompare(String(b.label)));
-  }, [stats, flatLookup, questionFilters.buildingId]);
-
   /* ---------------- filtering ---------------- */
   const filteredItemsGlobal = useMemo(() => {
-  const items = Array.isArray(stats?.items) ? stats.items : [];
+    const items = Array.isArray(stats?.items) ? stats.items : [];
+    const {
+      buildingId,
+      floorId,
+      flatId,
+      stageId,
+      status,
+      role,
+      flatCategory,
+      roomCategory,
+      timeWindow,
+    } = globalFilters;
 
-  // const {
-  //   status,
-  //   role,
-  //   stageId,
-  //   buildingId,
-  //   flatId, // ✅ IMPORTANT
-  //   flatCategory,
-  //   roomCategory,
-  //   timeWindow,
-  // } = globalFilters;
-  const {
-  buildingId,
-  floorId,  // ✅ NEW
-  flatId,
-  stageId,
-  status,
-  role,
-  flatCategory,
-  roomCategory,
-  timeWindow,
-} = globalFilters;
-
-
-  // ✅ include flatId here also
-  if (
-    !status &&
-    !role &&
-    !stageId &&
-    !buildingId &&
-    !flatId &&
-    !flatCategory &&
-    !roomCategory &&
-    timeWindow === "all"
-  ) {
-    return items;
-  }
-
-  const now = new Date();
-
-  return items.filter((item) => {
-    if (status && !matchesStatusFilter(item, status)) return false;
-
-    if (role) {
-      const rolesObj = item.roles || {};
-      const block = rolesObj[role.toLowerCase()];
-      if (!block || !block.user_id) return false;
+    if (
+      !status &&
+      !role &&
+      !stageId &&
+      !buildingId &&
+      !floorId &&
+      !flatId &&
+      !flatCategory &&
+      !roomCategory &&
+      timeWindow === "all"
+    ) {
+      return items;
     }
 
-    if (stageId) {
-      const sId = item.checklist?.stage_id;
-      if (!sId || String(sId) !== String(stageId)) return false;
-    }
+    const now = new Date();
 
-    if (buildingId) {
-      const bId = item.location?.building_id;
-      if (!bId || String(bId) !== String(buildingId)) return false;
-    }
+    return items.filter((item) => {
+      if (status && !matchesStatusFilter(item, status)) return false;
 
-    // ✅ Flat filter (put it HERE)
-    if (flatId) {
-      const fId = item.location?.flat_id;
-      if (!fId || String(fId) !== String(flatId)) return false;
-    }
+      if (role) {
+        const rolesObj = item.roles || {};
+        const block = rolesObj[role.toLowerCase()];
+        if (!block || !block.user_id) return false;
+      }
 
-    if (flatCategory) {
-      const itemFlatId = item.location?.flat_id; // ✅ rename to avoid confusion
-      if (!itemFlatId) return false;
-      const meta = flatLookup[itemFlatId];
-      const cat = meta?.typeName || null;
-      if (!cat || String(cat) !== String(flatCategory)) return false;
-    }
-    // ✅ Floor filter (uses flatLookup levelId)
-if (floorId) {
-  const fId = item.location?.flat_id;
-  if (!fId) return false;
+      if (stageId) {
+        const sId = item.checklist?.stage_id;
+        if (!sId || String(sId) !== String(stageId)) return false;
+      }
 
-  const meta = flatLookup[fId];
-  const lvl = meta?.levelId ? String(meta.levelId) : "";
-  if (!lvl || lvl !== String(floorId)) return false;
-}
+      if (buildingId) {
+        const bId = item.location?.building_id;
+        if (!bId || String(bId) !== String(buildingId)) return false;
+      }
 
+      if (floorId) {
+        const fId = item.location?.flat_id;
+        if (!fId) return false;
+        const meta = flatLookup[fId];
+        const lvl = meta?.levelId ? String(meta.levelId) : "";
+        if (!lvl || lvl !== String(floorId)) return false;
+      }
 
-    if (roomCategory) {
-      const loc = item.location || {};
-      const cat = loc.room_category || loc.room_type || loc.room || null;
-      if (!cat || String(cat) !== String(roomCategory)) return false;
-    }
+      if (flatId) {
+        const fId = item.location?.flat_id;
+        if (!fId || String(fId) !== String(flatId)) return false;
+      }
 
-    if (timeWindow !== "all") {
-      const latest = item.latest_submission || {};
-      const lastTimeStr = latest.checked_at || latest.supervised_at || latest.maker_at || null;
-      if (!lastTimeStr) return false;
+      if (flatCategory) {
+        const itemFlatId = item.location?.flat_id;
+        if (!itemFlatId) return false;
+        const meta = flatLookup[itemFlatId];
+        const cat = meta?.typeName || null;
+        if (!cat || String(cat) !== String(flatCategory)) return false;
+      }
 
-      const t = new Date(lastTimeStr);
-      if (Number.isNaN(t.getTime())) return false;
+      if (roomCategory) {
+        const loc = item.location || {};
+        const cat = loc.room_category || loc.room_type || loc.room || null;
+        if (!cat || String(cat) !== String(roomCategory)) return false;
+      }
 
-      const diffDays = (now - t) / (1000 * 60 * 60 * 24);
-      if (timeWindow === "30d" && diffDays > 30) return false;
-      if (timeWindow === "7d" && diffDays > 7) return false;
-    }
+      if (timeWindow !== "all") {
+        const latest = item.latest_submission || {};
+        const lastTimeStr = latest.checked_at || latest.supervised_at || latest.maker_at || null;
+        if (!lastTimeStr) return false;
 
-    return true;
-  });
-}, [stats, globalFilters, flatLookup]);
+        const t = new Date(lastTimeStr);
+        if (Number.isNaN(t.getTime())) return false;
 
+        const diffDays = (now - t) / (1000 * 60 * 60 * 24);
+        if (timeWindow === "30d" && diffDays > 30) return false;
+        if (timeWindow === "7d" && diffDays > 7) return false;
+      }
 
-  // const filtersActive = useMemo(() => {
-  //   const { status, role, stageId, buildingId, flatCategory,flatId, roomCategory, timeWindow } = globalFilters;
-  //   return !!status || !!role || !!stageId || !!buildingId ||  !!flatId ||  !!flatCategory || !!roomCategory || timeWindow !== "all";
-  // }, [globalFilters]);
+      return true;
+    });
+  }, [stats, globalFilters, flatLookup]);
+
   const filtersActive = useMemo(() => {
-  const {
-    buildingId,
-    floorId,
-    flatId,
-    stageId,
-    status,
-    role,
-    flatCategory,
-    roomCategory,
-    timeWindow,
-  } = globalFilters;
-
-  return (
-    !!buildingId ||
-    !!floorId ||
-    !!flatId ||
-    !!stageId ||
-    !!status ||
-    !!role ||
-    !!flatCategory ||
-    !!roomCategory ||
-    timeWindow !== "all"
-  );
-}, [globalFilters]);
-
+    const {
+      buildingId,
+      floorId,
+      flatId,
+      stageId,
+      status,
+      role,
+      flatCategory,
+      roomCategory,
+      timeWindow,
+    } = globalFilters;
+    return (
+      !!buildingId ||
+      !!floorId ||
+      !!flatId ||
+      !!stageId ||
+      !!status ||
+      !!role ||
+      !!flatCategory ||
+      !!roomCategory ||
+      timeWindow !== "all"
+    );
+  }, [globalFilters]);
 
   const workingItems = useMemo(() => {
     if (filtersActive) return filteredItemsGlobal;
     return Array.isArray(stats?.items) ? stats.items : [];
   }, [stats, filteredItemsGlobal, filtersActive]);
 
-const handleExport = () => {
-  const groups = groupItemsByPurpose(workingItems);
+  const handleExport = () => {
+    const groups = groupItemsByPurpose(workingItems);
 
-  // ✅ for each purpose -> one sheet
-  const sections = groups.map((g) => {
-    const hotoRows = buildHotoRowsFromItems(g.items, {
-      stageMap,
-      flatLookup,
-      buildingNameMap,
-      getChecklistLabel: (it) => it?.checklist?.title || it?.checklist?.name || "",
+    const sections = groups.map((g) => {
+      const hotoRows = buildHotoRowsFromItems(g.items, {
+        stageMap,
+        flatLookup,
+        buildingNameMap,
+        getChecklistLabel: (it) => it?.checklist?.title || it?.checklist?.name || "",
+      });
+
+      const snaggingRows = buildSnaggingRowsFromItems(g.items, {
+        stageMap,
+        flatLookup,
+        buildingNameMap,
+        getChecklistLabel: (it) => it?.checklist?.title || it?.checklist?.name || "",
+      });
+
+      return {
+        sheetName: g.label,
+        rightTitle: g.label,
+        snaggingRows,
+        rightOnly: true,
+        hotoRows,
+      };
     });
 
-    const snaggingRows = buildSnaggingRowsFromItems(g.items, {
-      stageMap,
-      flatLookup,
+    exportReportNewExcel({
+      sections,
+      fileName: `Report - ${projectName}.xlsx`,
+      items: workingItems,
       buildingNameMap,
-      getChecklistLabel: (it) => it?.checklist?.title || it?.checklist?.name || "",
     });
+  };
 
-    return {
-  sheetName: g.label,
-  rightTitle: g.label,
-  snaggingRows,
-  rightOnly: true, // ✅ ADD THIS
-};
+  const itemsForFlatOptions = useMemo(() => {
+    const items = Array.isArray(stats?.items) ? stats.items : [];
+    const { flatId, ...rest } = globalFilters;
+    const gf = { ...rest, flatId: "" };
 
-  });
+    const now = new Date();
+    return items.filter((item) => {
+      if (gf.status && !matchesStatusFilter(item, gf.status)) return false;
 
-  exportReportNewExcel({
-  sections,
-  fileName: `Report - ${projectName}.xlsx`,
-  items: workingItems,
-  buildingNameMap, // ✅ NEW (so Raw Items gets names)
-});
+      if (gf.role) {
+        const rolesObj = item.roles || {};
+        const block = rolesObj[gf.role.toLowerCase()];
+        if (!block || !block.user_id) return false;
+      }
 
-};
+      if (gf.stageId) {
+        const sId = item.checklist?.stage_id;
+        if (!sId || String(sId) !== String(gf.stageId)) return false;
+      }
 
-const itemsForFlatOptions = useMemo(() => {
-  const items = Array.isArray(stats?.items) ? stats.items : [];
-  const { flatId, ...rest } = globalFilters; // ✅ remove flatId only
+      if (gf.buildingId) {
+        const bId = item.location?.building_id;
+        if (!bId || String(bId) !== String(gf.buildingId)) return false;
+      }
 
-  // reuse your filteredItemsGlobal logic by temporarily overriding flatId
-  const gf = { ...rest, flatId: "" };
+      if (gf.floorId) {
+        const fId = item.location?.flat_id;
+        if (!fId) return false;
+        const meta = flatLookup[fId];
+        const lvl = meta?.levelId ? String(meta.levelId) : "";
+        if (!lvl || lvl !== String(gf.floorId)) return false;
+      }
 
-  const now = new Date();
-  return items.filter((item) => {
-    if (gf.status && !matchesStatusFilter(item, gf.status)) return false;
+      if (gf.flatCategory) {
+        const itemFlatId = item.location?.flat_id;
+        if (!itemFlatId) return false;
+        const meta = flatLookup[itemFlatId];
+        const cat = meta?.typeName || null;
+        if (!cat || String(cat) !== String(gf.flatCategory)) return false;
+      }
 
-    if (gf.role) {
-      const rolesObj = item.roles || {};
-      const block = rolesObj[gf.role.toLowerCase()];
-      if (!block || !block.user_id) return false;
-    }
+      if (gf.roomCategory) {
+        const loc = item.location || {};
+        const cat = loc.room_category || loc.room_type || loc.room || null;
+        if (!cat || String(cat) !== String(gf.roomCategory)) return false;
+      }
 
-    if (gf.stageId) {
-      const sId = item.checklist?.stage_id;
-      if (!sId || String(sId) !== String(gf.stageId)) return false;
-    }
+      if (gf.timeWindow !== "all") {
+        const latest = item.latest_submission || {};
+        const lastTimeStr = latest.checked_at || latest.supervised_at || latest.maker_at || null;
+        if (!lastTimeStr) return false;
 
-    if (gf.buildingId) {
-      const bId = item.location?.building_id;
-      if (!bId || String(bId) !== String(gf.buildingId)) return false;
-    }
+        const t = new Date(lastTimeStr);
+        if (Number.isNaN(t.getTime())) return false;
 
-    if (gf.flatCategory) {
-      const itemFlatId = item.location?.flat_id;
-      if (!itemFlatId) return false;
-      const meta = flatLookup[itemFlatId];
-      const cat = meta?.typeName || null;
-      if (!cat || String(cat) !== String(gf.flatCategory)) return false;
-    }
+        const diffDays = (now - t) / (1000 * 60 * 60 * 24);
+        if (gf.timeWindow === "30d" && diffDays > 30) return false;
+        if (gf.timeWindow === "7d" && diffDays > 7) return false;
+      }
 
-    if (gf.roomCategory) {
-      const loc = item.location || {};
-      const cat = loc.room_category || loc.room_type || loc.room || null;
-      if (!cat || String(cat) !== String(gf.roomCategory)) return false;
-    }
-
-    if (gf.timeWindow !== "all") {
-      const latest = item.latest_submission || {};
-      const lastTimeStr = latest.checked_at || latest.supervised_at || latest.maker_at || null;
-      if (!lastTimeStr) return false;
-
-      const t = new Date(lastTimeStr);
-      if (Number.isNaN(t.getTime())) return false;
-
-      const diffDays = (now - t) / (1000 * 60 * 60 * 24);
-      if (gf.timeWindow === "30d" && diffDays > 30) return false;
-      if (gf.timeWindow === "7d" && diffDays > 7) return false;
-    }
-
-    return true;
-  });
-}, [stats, globalFilters, flatLookup]);
-
-
-
+      return true;
+    });
+  }, [stats, globalFilters, flatLookup]);
 
   const flatOptions = useMemo(() => {
-  const items = Array.isArray(itemsForFlatOptions) ? itemsForFlatOptions : [];
-  const map = new Map();
+    const items = Array.isArray(itemsForFlatOptions) ? itemsForFlatOptions : [];
+    const map = new Map();
 
-  items.forEach((it) => {
-    const loc = it.location || {};
-    const flatId = loc.flat_id;
-    if (!flatId) return;
+    items.forEach((it) => {
+      const loc = it.location || {};
+      const flatId = loc.flat_id;
+      if (!flatId) return;
 
-    if (
-      globalFilters.buildingId &&
-      loc.building_id &&
-      String(loc.building_id) !== String(globalFilters.buildingId)
-    ) {
-      return;
-    }
-    // ✅ Floor restriction (if selected)
-if (globalFilters.floorId) {
-  const meta = flatLookup[flatId];
-  const lvl = meta?.levelId ? String(meta.levelId) : "";
-  if (!lvl || lvl !== String(globalFilters.floorId)) return;
-}
+      if (
+        globalFilters.buildingId &&
+        loc.building_id &&
+        String(loc.building_id) !== String(globalFilters.buildingId)
+      )
+        return;
 
+      if (globalFilters.floorId) {
+        const meta = flatLookup[flatId];
+        const lvl = meta?.levelId ? String(meta.levelId) : "";
+        if (!lvl || lvl !== String(globalFilters.floorId)) return;
+      }
 
-    if (!map.has(flatId)) {
-      const meta = flatLookup[flatId] || {};
-      const baseLabel = meta.number ? `Flat ${meta.number}` : `Flat #${flatId}`;
-      const label = meta.typeName ? `${baseLabel} • ${meta.typeName}` : baseLabel;
-      map.set(flatId, { id: String(flatId), label });
-    }
-  });
+      if (!map.has(flatId)) {
+        const meta = flatLookup[flatId] || {};
+        const baseLabel = meta.number ? `Flat ${meta.number}` : `Flat #${flatId}`;
+        const label = meta.typeName ? `${baseLabel} • ${meta.typeName}` : baseLabel;
+        map.set(flatId, { id: String(flatId), label });
+      }
+    });
 
-  return Array.from(map.values()).sort((a, b) =>
-    String(a.label).localeCompare(String(b.label))
-  );
-}, [itemsForFlatOptions, flatLookup, globalFilters.buildingId]);
-
-const allParetoFlatIds = useMemo(
-  () => (flatOptions || []).map((f) => String(f.id)),
-  [flatOptions]
-);
-
-const paretoAllFlatsSelected = useMemo(() => {
-  if (!allParetoFlatIds.length) return false;
-  const set = new Set(paretoFilters.focusFlatIds || []);
-  return allParetoFlatIds.every((id) => set.has(id));
-}, [allParetoFlatIds, paretoFilters.focusFlatIds]);
-
-const toggleParetoSelectAllFlats = () => {
-  setParetoFilters((p) => ({
-    ...p,
-    focusFlatIds: paretoAllFlatsSelected ? [] : allParetoFlatIds,
-  }));
-};
-
+    return Array.from(map.values()).sort((a, b) =>
+      String(a.label).localeCompare(String(b.label))
+    );
+  }, [itemsForFlatOptions, flatLookup, globalFilters.buildingId, globalFilters.floorId]);
 
   const rawSummary = stats?.summary || {};
   const summary = useMemo(() => {
     if (!workingItems || !workingItems.length) {
-      return { total_items: 0, total_with_submission: 0, by_latest_status: {}, by_stage: [], roles: {} };
+      return {
+        total_items: 0,
+        total_with_submission: 0,
+        by_latest_status: {},
+        by_stage: [],
+        roles: {},
+      };
     }
     if (!filtersActive && rawSummary && Object.keys(rawSummary).length) return rawSummary;
     return buildSummaryFromItems(workingItems);
@@ -6590,31 +6190,13 @@ const toggleParetoSelectAllFlats = () => {
   const roleStatsObj = summary.roles || {};
   const allRoleKeys = Object.keys(roleStatsObj);
   const visibleRoleKeys =
-    viewMode === "manager" ? allRoleKeys : allRoleKeys.filter((k) => CORE_ROLES_FOR_HEAD.includes(k));
+    viewMode === "manager"
+      ? allRoleKeys
+      : allRoleKeys.filter((k) => CORE_ROLES_FOR_HEAD.includes(k));
 
   const hasData = !!stats && !loading && !error;
-  const numericProjectId = Number(id) || null;
 
   /* ---------------- charts data ---------------- */
-  // const stageProgressChartData = useMemo(() => {
-  //   if (!summary.by_stage) return [];
-  //   return summary.by_stage
-  //     .map((stg) => {
-  //       const stgItems = safeNumber(stg.items);
-  //       const statusData = stg.by_latest_status || {};
-  //       const stageLabel = stageMap[stg.stage_id] || stg.stage_name || `Stage ${stg.stage_id}`;
-  //       return {
-  //         name: stageLabel,
-  //         completed: safeNumber(statusData.completed),
-  //         pending_checker: safeNumber(statusData.pending_checker),
-  //         pending_for_inspector: safeNumber(statusData.pending_for_inspector),
-  //         not_started: safeNumber(statusData.not_started),
-  //         total: stgItems,
-  //       };
-  //     })
-  //     .sort((a, b) => b.total - a.total);
-  // }, [summary, stageMap]);
-
   const statusPieData = useMemo(
     () =>
       statusKeys
@@ -6626,74 +6208,68 @@ const toggleParetoSelectAllFlats = () => {
         .filter((d) => d.value > 0),
     [statusKeys, byStatus]
   );
-const flatLabel = (flatId) => {
-  const meta = flatLookup?.[flatId];
-  const base = meta?.number ? `Flat ${meta.number}` : `Flat #${flatId}`;
-  return meta?.typeName ? `${base} • ${meta.typeName}` : base;
-};
 
-const flatProgressChartData = useMemo(() => {
-  const items = Array.isArray(workingItems) ? workingItems : [];
-  const map = new Map();
+  const flatLabel = (flatId) => {
+    const meta = flatLookup?.[flatId];
+    const base = meta?.number ? `Flat ${meta.number}` : `Flat #${flatId}`;
+    return meta?.typeName ? `${base} • ${meta.typeName}` : base;
+  };
 
-  items.forEach((it) => {
-    const flatId = it?.location?.flat_id;
-    if (!flatId) return;
+  const flatProgressChartData = useMemo(() => {
+    const items = Array.isArray(workingItems) ? workingItems : [];
+    const map = new Map();
 
-    const st = String(it?.item_status || "").toLowerCase();
+    items.forEach((it) => {
+      const flatId = it?.location?.flat_id;
+      if (!flatId) return;
 
-    const rec =
-      map.get(flatId) ||
-      {
-        flatId: String(flatId),
-        name: flatLabel(flatId),
-        completed: 0,
-        pending_checker: 0,
-        pending_for_inspector: 0,
-        not_started: 0,
-        other: 0,
-        total: 0,
-      };
+      const st = String(it?.item_status || "").toLowerCase();
 
-    rec.total += 1;
+      const rec =
+        map.get(flatId) || {
+          flatId: String(flatId),
+          name: flatLabel(flatId),
+          completed: 0,
+          pending_checker: 0,
+          pending_for_inspector: 0,
+          not_started: 0,
+          other: 0,
+          total: 0,
+        };
 
-    if (st === "completed") rec.completed += 1;
-    else if (st === "pending_checker" || st === "pending_for_checker") rec.pending_checker += 1;
-    else if (st === "pending_for_inspector") rec.pending_for_inspector += 1;
-    else if (st === "not_started" || st === "created") rec.not_started += 1;
-    else rec.other += 1;
+      rec.total += 1;
 
-    map.set(flatId, rec);
-  });
+      if (st === "completed") rec.completed += 1;
+      else if (st === "pending_checker" || st === "pending_for_checker") rec.pending_checker += 1;
+      else if (st === "pending_for_inspector") rec.pending_for_inspector += 1;
+      else if (st === "not_started" || st === "created") rec.not_started += 1;
+      else rec.other += 1;
 
-  const arr = Array.from(map.values());
+      map.set(flatId, rec);
+    });
 
-  // sort: open issues first (more useful)
-  arr.forEach((r) => {
-    r.open = r.pending_checker + r.pending_for_inspector + r.not_started;
-  });
+    const arr = Array.from(map.values());
+    arr.forEach((r) => (r.open = r.pending_checker + r.pending_for_inspector + r.not_started));
+    arr.sort((a, b) => b.open - a.open || b.total - a.total);
+    return arr.slice(0, 12);
+  }, [workingItems, flatLookup]);
 
-  arr.sort((a, b) => b.open - a.open || b.total - a.total);
-
-  // show top 12 flats (change if you want)
-  return arr.slice(0, 12);
-}, [workingItems, flatLookup]);
-const BarValueLabel = ({ x, y, width, value, fill }) => {
-  if (!value || value <= 0) return null;
-  return (
-    <text
-      x={x + width / 2}
-      y={y - 6}
-      textAnchor="middle"
-      fontSize={11}
-      fontWeight={900}
-      fill={fill || "#0f172a"}
-      style={{ pointerEvents: "none" }}
-    >
-      {value}
-    </text>
-  );
-};
+  const BarValueLabel = ({ x, y, width, value, fill }) => {
+    if (!value || value <= 0) return null;
+    return (
+      <text
+        x={x + width / 2}
+        y={y - 6}
+        textAnchor="middle"
+        fontSize={11}
+        fontWeight={900}
+        fill={fill || "#0f172a"}
+        style={{ pointerEvents: "none" }}
+      >
+        {value}
+      </text>
+    );
+  };
 
   const teamPerformanceData = useMemo(() => {
     if (!hasData) return [];
@@ -6705,7 +6281,13 @@ const BarValueLabel = ({ x, y, width, value, fill }) => {
         const uid = rolesObj[rk]?.user_id;
         if (!uid) return;
         if (!userStats[uid]) {
-          userStats[uid] = { userName: resolveUserName(uid), completed: 0, pending: 0, total: 0, efficiency: 0 };
+          userStats[uid] = {
+            userName: resolveUserName(uid),
+            completed: 0,
+            pending: 0,
+            total: 0,
+            efficiency: 0,
+          };
         }
         userStats[uid].total += 1;
         if (status === "completed") userStats[uid].completed += 1;
@@ -6714,10 +6296,7 @@ const BarValueLabel = ({ x, y, width, value, fill }) => {
     });
 
     return Object.values(userStats)
-      .map((u) => ({
-        ...u,
-        efficiency: u.total > 0 ? Math.round((u.completed / u.total) * 100) : 0,
-      }))
+      .map((u) => ({ ...u, efficiency: u.total > 0 ? Math.round((u.completed / u.total) * 100) : 0 }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 10);
   }, [workingItems, hasData, userMap]);
@@ -6775,6 +6354,52 @@ const BarValueLabel = ({ x, y, width, value, fill }) => {
     return data;
   }, [workingItems]);
 
+  // ✅ Donut chart (30d split) — counts (NOT percent)
+  const velocityTotals = useMemo(() => {
+    const out = { completed: 0, touched: 0, total: 0 };
+    (velocityChartData || []).forEach((d) => {
+      out.completed += safeNumber(d.completed);
+      out.touched += safeNumber(d.started);
+    });
+    out.total = out.completed + out.touched;
+    return out;
+  }, [velocityChartData]);
+
+  // ✅ Donut data from API (mutually exclusive buckets)
+const unitCounts = unitStageSummary?.counts || {};
+const unitTotalUnits = safeNumber(unitCounts.total_units);
+
+const unitDonutData = useMemo(() => {
+  return [
+    {
+      name: "Yet to Start",
+      value: safeNumber(unitCounts.pending_yet_to_start),
+      color: CHART_COLORS.danger,
+    },
+    {
+      name: "Work In Progress",
+      value: safeNumber(unitCounts.work_in_progress_unit),
+      color: CHART_COLORS.warning,
+    },
+    {
+      name: "Yet to Verify",
+      value: safeNumber(unitCounts.yet_to_verify),
+      color: CHART_COLORS.secondary,
+    },
+    {
+      name: "Complete",
+      value: safeNumber(unitCounts.complete),
+      color: CHART_COLORS.success,
+    },
+  ].filter((x) => x.value > 0);
+}, [
+  unitCounts.pending_yet_to_start,
+  unitCounts.work_in_progress_unit,
+  unitCounts.yet_to_verify,
+  unitCounts.complete,
+]);
+
+
   const roleRadarData = useMemo(() => {
     if (!visibleRoleKeys.length) return [];
     const maxItems = Math.max(0, ...visibleRoleKeys.map((k) => safeNumber(roleStatsObj[k]?.items_touched)));
@@ -6795,27 +6420,24 @@ const BarValueLabel = ({ x, y, width, value, fill }) => {
   const paretoCategoryData = useMemo(() => {
     if (!workingItems || !workingItems.length) return [];
 
-    const pendingKeys = ["pending_checker", "pending_for_inspector", "not_started"];
     const selectedStatus = String(globalFilters.status || "").toLowerCase();
-
     const selectedStageId = globalFilters.stageId || null;
     const selectedBuildingId = globalFilters.buildingId || null;
     const selectedFloorIds = paretoFilters.floorIds || [];
     const selectedFlatIds = paretoFilters.focusFlatIds || [];
-    const categoryMode = paretoFilters.categoryMode || "room";
+    const categoryMode = paretoFilters.categoryMode || "checklist";
 
     const rowsMap = {};
     workingItems.forEach((item) => {
-  const status = (item.item_status || "").toLowerCase();
+      const status = (item.item_status || "").toLowerCase();
 
-  // ✅ If dropdown status selected -> only that bucket
-  if (selectedStatus) {
-    if (!matchesStatusFilter(item, selectedStatus)) return;
-  } else {
-    // ✅ default: pending concentration
-    const pendingKeys = ["pending_checker", "pending_for_inspector", "not_started"];
-      if (!pendingKeys.includes(status)) return;
-  }
+      if (selectedStatus) {
+        if (!matchesStatusFilter(item, selectedStatus)) return;
+      } else {
+        const pendingKeys = ["pending_checker", "pending_for_inspector", "not_started"];
+        if (!pendingKeys.includes(status)) return;
+      }
+
       if (selectedStageId) {
         const sId = item.checklist?.stage_id;
         if (!sId || String(sId) !== String(selectedStageId)) return;
@@ -6856,366 +6478,42 @@ const BarValueLabel = ({ x, y, width, value, fill }) => {
     return rows.map((r) => {
       running += r.pending;
       const cumulativePct = Math.round((running / totalPending) * 100);
-      return {
-        ...r,
-        cumulativePct,
-        isTop80: cumulativePct <= 80,
-      };
+      return { ...r, cumulativePct, isTop80: cumulativePct <= 80 };
     });
-  }, [workingItems, globalFilters.stageId, globalFilters.buildingId, paretoFilters, flatLookup]);
+  }, [
+    workingItems,
+    globalFilters.status,
+    globalFilters.stageId,
+    globalFilters.buildingId,
+    paretoFilters,
+    flatLookup,
+  ]);
 
-  const bottleneckData = useMemo(() => {
-    if (!summary.by_stage) return [];
-    return summary.by_stage
-      .map((stg) => {
-        const stgItems = safeNumber(stg.items);
-        const statusData = stg.by_latest_status || {};
-        const stageLabel = stageMap[stg.stage_id] || `Stage #${stg.stage_id}`;
+  const paretoMinWidth = useMemo(() => {
+    const n = paretoCategoryData?.length || 0;
+    return Math.max(900, n * 90);
+  }, [paretoCategoryData]);
 
-        const pending =
-          safeNumber(statusData.pending_checker) +
-          safeNumber(statusData.pending_for_inspector) +
-          safeNumber(statusData.not_started);
-
-        const score = stgItems > 0 ? (pending / stgItems) * 100 : 0;
-        return {
-          stage: stageLabel,
-          pendingItems: pending,
-          totalItems: stgItems,
-          bottleneckScore: Math.round(score),
-          isBottleneck: score > 50,
-        };
-      })
-      .filter((d) => d.isBottleneck)
-      .sort((a, b) => b.bottleneckScore - a.bottleneckScore);
-  }, [summary, stageMap]);
-
-  const recentActivity = useMemo(() => {
-    if (!workingItems || !workingItems.length) return null;
-    const now = Date.now();
-    const days = 7;
-    const cutoff = now - days * 24 * 60 * 60 * 1000;
-
-    let total = 0;
-    const counts = { completed: 0, pending_checker: 0, pending_for_inspector: 0, not_started: 0, other: 0 };
-
-    workingItems.forEach((item) => {
-      const latest = item.latest_submission || {};
-      const lastTimeStr = latest.checked_at || latest.supervised_at || latest.maker_at;
-      if (!lastTimeStr) return;
-      const t = new Date(lastTimeStr).getTime();
-      if (!t || Number.isNaN(t) || t < cutoff) return;
-
-      total += 1;
-      const st = (item.item_status || "").toLowerCase();
-      if (Object.prototype.hasOwnProperty.call(counts, st)) counts[st] += 1;
-      else counts.other += 1;
-    });
-
-    if (!total) return null;
-    return { days, total, counts };
-  }, [workingItems]);
-
-  const locationHotspots = useMemo(() => {
-    if (!workingItems || !workingItems.length) return [];
-    const flatMap = {};
-
-    workingItems.forEach((item) => {
-      const flatId = item.location?.flat_id;
-      if (!flatId) return;
-      const status = (item.item_status || "").toLowerCase();
-
-      const rec =
-        flatMap[flatId] ||
-        (flatMap[flatId] = {
-          flatId,
-          meta: flatLookup[flatId] || null,
-          total: 0,
-          completed: 0,
-          pending_checker: 0,
-          pending_for_inspector: 0,
-          not_started: 0,
-        });
-
-      rec.total += 1;
-      if (Object.prototype.hasOwnProperty.call(rec, status)) rec[status] += 1;
-    });
-
-    let arr = Object.values(flatMap);
-    arr.forEach((r) => {
-      r.openIssues = safeNumber(r.pending_checker) + safeNumber(r.pending_for_inspector) + safeNumber(r.not_started);
-    });
-    arr.sort((a, b) => b.openIssues - a.openIssues);
-    return arr.slice(0, 6);
-  }, [workingItems, flatLookup]);
-
-  /* ---------------- roles/access config vs activity ---------------- */
-  const projectUsersAccesses = useMemo(() => {
-    if (!numericProjectId || !Array.isArray(users)) return [];
-    const result = [];
-    users.forEach((u) => {
-      const accesses = Array.isArray(u.accesses) ? u.accesses : [];
-      const userName =
-        (u.first_name && u.first_name.trim()) ||
-        (u.username && u.username.trim()) ||
-        u.email ||
-        `User #${u.id}`;
-
-      accesses.forEach((acc) => {
-        if (acc.project_id && acc.project_id !== numericProjectId) return;
-        const rolesArr = Array.isArray(acc.roles) ? acc.roles : [];
-        const roleNames = rolesArr.map((r) => (typeof r === "string" ? r : r?.role)).filter(Boolean);
-        result.push({
-          userId: u.id,
-          userName,
-          accessId: acc.id,
-          stageId: acc.stage_id,
-          phaseId: acc.phase_id,
-          roleNames,
-        });
-      });
-    });
-    return result;
-  }, [users, numericProjectId]);
-
-  const configAndActivity = useMemo(() => {
-    if (!numericProjectId) return { coverageList: [], inactiveAssignments: [], unconfiguredActivity: [] };
-
-    const configAssignments = {};
-    const coverageByStage = {};
-
-    (projectUsersAccesses || []).forEach((acc) => {
-      const stageId = acc.stageId;
-      if (!stageId) return;
-
-      const stageRec =
-        coverageByStage[stageId] || (coverageByStage[stageId] = { stageId, roles: {} });
-
-      acc.roleNames.forEach((roleNameRaw) => {
-        const roleName = String(roleNameRaw || "").toUpperCase();
-        if (!roleName) return;
-        const key = `${stageId}|${roleName}|${acc.userId}`;
-        if (!configAssignments[key]) {
-          configAssignments[key] = { stageId, roleName, userId: acc.userId, userName: acc.userName };
-        }
-        const set = stageRec.roles[roleName] || (stageRec.roles[roleName] = new Set());
-        set.add(acc.userId);
-      });
-    });
-
-    const actualAssignments = {};
-    (workingItems || []).forEach((item) => {
-      const stageId = item.checklist?.stage_id;
-      if (!stageId) return;
-      const rolesObj = item.roles || {};
-      ["maker", "checker", "supervisor", "initializer"].forEach((rk) => {
-        const uid = rolesObj[rk]?.user_id;
-        if (!uid) return;
-        const roleName = rk.toUpperCase();
-        const key = `${stageId}|${roleName}|${uid}`;
-        const rec = actualAssignments[key] || (actualAssignments[key] = { stageId, roleName, userId: uid, count: 0 });
-        rec.count += 1;
-      });
-    });
-
-    const inactiveAssignments = [];
-    Object.entries(configAssignments).forEach(([key, cfg]) => {
-      const act = actualAssignments[key];
-      if (!act || !act.count) inactiveAssignments.push({ ...cfg, count: 0 });
-    });
-
-    const unconfiguredActivity = [];
-    Object.entries(actualAssignments).forEach(([key, act]) => {
-      if (!configAssignments[key]) {
-        unconfiguredActivity.push({ ...act, userName: resolveUserName(act.userId) });
-      }
-    });
-
-    const coverageList = Object.values(coverageByStage).map((entry) => {
-      const stageLabel = stageMap[entry.stageId] || `Stage #${entry.stageId}`;
-      const roles = Object.entries(entry.roles).map(([roleName, set]) => ({ roleName, userCount: set.size }));
-      roles.sort((a, b) => b.userCount - a.userCount);
-      return { stageId: entry.stageId, stageLabel, roles };
-    });
-
-    inactiveAssignments.sort((a, b) => a.userName.localeCompare(b.userName));
-    unconfiguredActivity.sort((a, b) => b.count - a.count);
-
-    return {
-      coverageList,
-      inactiveAssignments: inactiveAssignments.slice(0, 10),
-      unconfiguredActivity: unconfiguredActivity.slice(0, 10),
-    };
-  }, [projectUsersAccesses, workingItems, stageMap, userMap, numericProjectId]);
-
-  const configByUser = useMemo(() => {
-    const map = {};
-    (projectUsersAccesses || []).forEach((acc) => {
-      const rec = map[acc.userId] || (map[acc.userId] = { userId: acc.userId, userName: acc.userName, accesses: [] });
-      rec.accesses.push(acc);
-    });
-    return Object.values(map)
-      .filter((r) => r.accesses.length)
-      .sort((a, b) => a.userName.localeCompare(b.userName));
-  }, [projectUsersAccesses]);
-
-  /* ---------------- Question hotspots slice ---------------- */
-  const questionStatusData = useMemo(() => {
-    const items = Array.isArray(workingItems) ? workingItems : [];
-    if (!items.length) return [];
-
-    const { stageId, categoryId, buildingId, floorId, roomCategory, statusBucket } = questionFilters;
-
-    const filtered = items.filter((item) => {
-      const loc = item.location || {};
-      const cl = item.checklist || {};
-
-      if (stageId) {
-        const sId = cl.stage_id;
-        if (!sId || String(sId) !== String(stageId)) return false;
-      }
-
-      if (categoryId) {
-        const catId = cl.category_id || cl.category;
-        if (!catId || String(catId) !== String(categoryId)) return false;
-      }
-
-      if (buildingId) {
-        const bId = loc.building_id;
-        if (!bId || String(bId) !== String(buildingId)) return false;
-      }
-
-      if (floorId) {
-        const flatId = loc.flat_id;
-        const meta = flatId ? flatLookup[flatId] : null;
-        if (!meta || String(meta.levelId) !== String(floorId)) return false;
-      }
-
-      if (roomCategory) {
-        const rc = loc.room_category || loc.room_type || loc.room || null;
-        if (!rc || String(rc) !== String(roomCategory)) return false;
-      }
-
-      const s = (item.item_status || "").toLowerCase();
-      if (statusBucket === "open") {
-        if (!["pending_checker", "pending_for_inspector", "not_started"].includes(s)) return false;
-      } else if (statusBucket === "closed") {
-        if (s !== "completed") return false;
-      }
-
-      return true;
-    });
-
-    if (!filtered.length) return [];
-
-    const byQuestion = {};
-    filtered.forEach((item) => {
-      const key = item.item_title || `Item #${item.item_id}`;
-      const catLabel = getParetoCategoryLabel(item, flatLookup, "checklist");
-      if (!byQuestion[key]) {
-        byQuestion[key] = {
-          question: key,
-          categoryLabel: null,
-          total: 0,
-          completed: 0,
-          pending_checker: 0,
-          pending_for_inspector: 0,
-          not_started: 0,
-          other: 0,
-        };
-      }
-      const rec = byQuestion[key];
-      if (!rec.categoryLabel && catLabel) rec.categoryLabel = catLabel;
-
-      const st = (item.item_status || "").toLowerCase();
-      rec.total += 1;
-      if (Object.prototype.hasOwnProperty.call(rec, st)) rec[st] += 1;
-      else rec.other += 1;
-    });
-
-    let list = Object.values(byQuestion);
-    list.forEach((q) => {
-      q.openCount = safeNumber(q.pending_checker) + safeNumber(q.pending_for_inspector) + safeNumber(q.not_started);
-      q.openPct = q.total > 0 ? Math.round((q.openCount / q.total) * 100) : 0;
-      q.completedPct = q.total > 0 ? Math.round((q.completed / q.total) * 100) : 0;
-    });
-    list.sort((a, b) => b.openCount - a.openCount || b.total - a.total);
-    return list.slice(0, 15);
-  }, [workingItems, questionFilters, flatLookup]);
-
-  const handleOpenFlatReport = (flatId, flatMeta = null) => {
-    if (!flatId) return;
-    navigate(`/projects/${id}/flat-report/${flatId}`, {
-      state: {
-        project: projectFromState || null,
-        flatId,
-        flatMeta,
-        filters: { stageId: globalFilters.stageId || "", buildingId: globalFilters.buildingId || "" },
-      },
-    });
+  const TopValueLabel = ({ x, y, width, value, fill }) => {
+    if (!value || value <= 0) return null;
+    return (
+      <text
+        x={x + width / 2}
+        y={y - 6}
+        textAnchor="middle"
+        fontSize={11}
+        fontWeight={900}
+        fill={fill || "#0f172a"}
+        style={{ pointerEvents: "none" }}
+      >
+        {value}
+      </text>
+    );
   };
 
-
-
-  // ---- bar value labels (show values on each stacked segment) ----
-const getReadableTextColor = (hex) => {
-  try {
-    const h = String(hex || "").replace("#", "");
-    if (h.length !== 6) return "#fff";
-    const r = parseInt(h.slice(0, 2), 16);
-    const g = parseInt(h.slice(2, 4), 16);
-    const b = parseInt(h.slice(4, 6), 16);
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.62 ? "#0f172a" : "#ffffff";
-  } catch {
-    return "#ffffff";
-  }
-};
-
-const StackValueLabel = ({ x, y, width, height, value, fill }) => {
-  if (!value || value <= 0) return null;
-
-  // if segment is too small, don't print (avoids clutter)
-  if (width < 18 || height < 14) return null;
-
-  return (
-    <text
-      x={x + width / 2}
-      y={y + height / 2 + 4}
-      textAnchor="middle"
-      fontSize={11}
-      fontWeight={900}
-      fill={getReadableTextColor(fill)}
-      style={{ pointerEvents: "none" }}
-    >
-      {value}
-    </text>
-  );
-};
-
-
-
-
-const TopValueLabel = ({ x, y, width, value, fill }) => {
-  if (!value || value <= 0) return null;
-  return (
-    <text
-      x={x + width / 2}
-      y={y - 6}
-      textAnchor="middle"
-      fontSize={11}
-      fontWeight={900}
-      fill={fill || "#0f172a"}
-      style={{ pointerEvents: "none" }}
-    >
-      {value}
-    </text>
-  );
-};
-
-
   const CustomTooltip = ({ active, payload, label }) => {
-    if (!active || !payload) return null;
+    if (!active || !payload || !payload.length) return null;
+    const header = label || payload?.[0]?.name || "";
     return (
       <div
         className="rounded-xl p-3 shadow-xl border"
@@ -7224,9 +6522,11 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
           borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
         }}
       >
-        <div className="text-xs font-bold mb-2" style={{ color: textColor }}>
-          {label}
-        </div>
+        {header ? (
+          <div className="text-xs font-bold mb-2" style={{ color: textColor }}>
+            {header}
+          </div>
+        ) : null}
         {payload.map((entry, idx) => (
           <div key={idx} className="text-xs font-semibold" style={{ color: entry.color }}>
             {entry.name}: {entry.value}
@@ -7235,11 +6535,25 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
       </div>
     );
   };
-  const paretoMinWidth = useMemo(() => {
-  const n = paretoCategoryData?.length || 0;
-  return Math.max(900, n * 90); // 90px per category (adjust if needed)
-}, [paretoCategoryData]);
 
+  const EmptyChart = ({ title, subtitle }) => (
+    <Card theme={theme} className="p-5">
+      <div className="text-base font-black mb-1">{title}</div>
+      <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+        {subtitle || "No data for current filters."}
+      </div>
+      <div
+        className="h-[320px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+        style={{
+          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+          background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+          color: subText,
+        }}
+      >
+        No data
+      </div>
+    </Card>
+  );
 
   /* ---------------- render ---------------- */
   return (
@@ -7251,11 +6565,6 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
       }}
     >
       <div className="mx-auto max-w-[1600px] px-4 md:px-8 py-8 space-y-6">
-        {/* Header */}
-        {/* <Card theme={theme} className="p-6 md:p-8">
-         
-        </Card> */}
-
         {loading && (
           <div className="py-16 text-center font-bold" style={{ color: subText }}>
             Loading dashboard...
@@ -7270,48 +6579,13 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
             </div>
           </Card>
         )}
-        
 
         {hasData && (
           <>
-            {/* Quick stats row */}
-            {/* <div className="grid gap-4 md:grid-cols-4">
-              <Card theme={theme} className="p-5">
-                <div className="text-[11px] font-bold uppercase" style={{ color: subText }}>
-                  Total Items
-                </div>
-                <div className="text-3xl font-black mt-1">{fmtInt(totalItems)}</div>
-                <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
-                  After filters
-                </div>
-              </Card>
+            {/* Header */}
+           
 
-              <Card theme={theme} className="p-5">
-                <div className="text-[11px] font-bold uppercase" style={{ color: subText }}>
-                  With Submission
-                </div>
-                <div className="text-3xl font-black mt-1">{fmtInt(totalWithSubmission)}</div>
-                <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
-                  {withSubmissionRate}% coverage
-                </div>
-              </Card>
-
-              <Card theme={theme} className="p-5">
-                <div className="text-[11px] font-bold uppercase" style={{ color: subText }}>
-                  Pending Checker
-                </div>
-                <div className="text-3xl font-black mt-1">{fmtInt(byStatus.pending_checker || 0)}</div>
-              </Card>
-
-              <Card theme={theme} className="p-5">
-                <div className="text-[11px] font-bold uppercase" style={{ color: subText }}>
-                  Pending Inspector
-                </div>
-                <div className="text-3xl font-black mt-1">{fmtInt(byStatus.pending_for_inspector || 0)}</div>
-              </Card>
-            </div> */}
-
-            {/* Global Filters */}
+            {/* Global Filters (Aligned) */}
             <Card theme={theme} className="p-5">
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
@@ -7325,21 +6599,18 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                   type="button"
                   onClick={() =>
                     setGlobalFilters({
-  buildingId: "",
-  floorId: "",
-  flatId: "",
-
-  stageId: "",
-  status: "",
-  role: "",
-
-  flatCategory: "",
-  roomCategory: "",
-  timeWindow: "all",
-
+                      buildingId: "",
+                      floorId: "",
+                      flatId: "",
+                      stageId: "",
+                      status: "",
+                      role: "",
+                      flatCategory: "",
+                      roomCategory: "",
+                      timeWindow: "all",
                     })
                   }
-                  className="px-3 py-2 rounded-xl text-xs font-black border"
+                  className="h-[42px] px-4 rounded-xl text-sm font-black border"
                   style={{
                     borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
                     color: subText,
@@ -7350,17 +6621,17 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                 </button>
               </div>
 
-<div className="grid gap-3 mt-4 md:grid-cols-7">
+              <div className="grid gap-3 mt-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
                 <div>
                   <Label theme={theme}>Status</Label>
                   <Select
                     theme={theme}
+                    className="h-[42px]"
                     value={globalFilters.status}
                     onChange={(e) => setGlobalFilters((p) => ({ ...p, status: e.target.value }))}
                   >
                     <option value="">All</option>
                     <option value="started">Started</option>
-
                     {distinctStatuses.map((s) => (
                       <option key={s} value={s}>
                         {titleCaseStatus(s)}
@@ -7373,6 +6644,7 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                   <Label theme={theme}>Role touch</Label>
                   <Select
                     theme={theme}
+                    className="h-[42px]"
                     value={globalFilters.role}
                     onChange={(e) => setGlobalFilters((p) => ({ ...p, role: e.target.value }))}
                   >
@@ -7387,6 +6659,7 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                   <Label theme={theme}>Stage</Label>
                   <Select
                     theme={theme}
+                    className="h-[42px]"
                     value={globalFilters.stageId}
                     onChange={(e) => setGlobalFilters((p) => ({ ...p, stageId: e.target.value }))}
                   >
@@ -7402,69 +6675,72 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                 <div>
                   <Label theme={theme}>Building</Label>
                   <Select
-  theme={theme}
-  value={globalFilters.buildingId}
-  onChange={(e) =>
-    setGlobalFilters((p) => ({
-      ...p,
-      buildingId: e.target.value,
-      floorId: "", // ✅ reset floor when building changes
-      flatId: "",  // ✅ reset flat when building changes
-    }))
-  }
->
-  <option value="">All</option>
-  {buildingOptions.map((b) => (
-    <option key={b.id} value={b.id}>
-      {b.label}
-    </option>
-  ))}
-</Select>
-
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.buildingId}
+                    onChange={(e) =>
+                      setGlobalFilters((p) => ({
+                        ...p,
+                        buildingId: e.target.value,
+                        floorId: "",
+                        flatId: "",
+                      }))
+                    }
+                  >
+                    <option value="">All</option>
+                    {buildingOptions.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.label}
+                      </option>
+                    ))}
+                  </Select>
                 </div>
-                <div>
-  <Label theme={theme}>Floor</Label>
-  <Select
-    theme={theme}
-    value={globalFilters.floorId}
-    onChange={(e) =>
-      setGlobalFilters((p) => ({
-        ...p,
-        floorId: e.target.value,
-        flatId: "", // ✅ reset flat when floor changes
-      }))
-    }
-  >
-    <option value="">All</option>
-    {floorOptions.map((f) => (
-      <option key={f.id} value={f.id}>
-        {f.label}
-      </option>
-    ))}
-  </Select>
-</div>
 
                 <div>
-  <Label theme={theme}>Flat</Label>
-  <Select
-    theme={theme}
-    value={globalFilters.flatId}
-    onChange={(e) => setGlobalFilters((p) => ({ ...p, flatId: e.target.value }))}
-  >
-    <option value="">All</option>
-    {flatOptions.map((f) => (
-      <option key={f.id} value={f.id}>
-        {f.label}
-      </option>
-    ))}
-  </Select>
-</div>
+                  <Label theme={theme}>Floor</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.floorId}
+                    onChange={(e) =>
+                      setGlobalFilters((p) => ({
+                        ...p,
+                        floorId: e.target.value,
+                        flatId: "",
+                      }))
+                    }
+                  >
+                    <option value="">All</option>
+                    {floorOptions.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
 
+                <div>
+                  <Label theme={theme}>Flat</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.flatId}
+                    onChange={(e) => setGlobalFilters((p) => ({ ...p, flatId: e.target.value }))}
+                  >
+                    <option value="">All</option>
+                    {flatOptions.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
 
                 <div>
                   <Label theme={theme}>Flat Category</Label>
                   <Select
                     theme={theme}
+                    className="h-[42px]"
                     value={globalFilters.flatCategory}
                     onChange={(e) => setGlobalFilters((p) => ({ ...p, flatCategory: e.target.value }))}
                   >
@@ -7481,6 +6757,7 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                   <Label theme={theme}>Room Category</Label>
                   <Select
                     theme={theme}
+                    className="h-[42px]"
                     value={globalFilters.roomCategory}
                     onChange={(e) => setGlobalFilters((p) => ({ ...p, roomCategory: e.target.value }))}
                   >
@@ -7492,63 +6769,110 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                     ))}
                   </Select>
                 </div>
-              </div>
 
-              <div className="mt-3 max-w-[240px]">
-                <Label theme={theme}>Time Window</Label>
-                <Select
-                  theme={theme}
-                  value={globalFilters.timeWindow}
-                  onChange={(e) => setGlobalFilters((p) => ({ ...p, timeWindow: e.target.value }))}
-                >
-                  <option value="all">All time</option>
-                  <option value="30d">Last 30 days</option>
-                  <option value="7d">Last 7 days</option>
-                </Select>
+                <div className="xl:col-span-2">
+                  <Label theme={theme}>Time Window</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.timeWindow}
+                    onChange={(e) => setGlobalFilters((p) => ({ ...p, timeWindow: e.target.value }))}
+                  >
+                    <option value="all">All time</option>
+                    <option value="30d">Last 30 days</option>
+                    <option value="7d">Last 7 days</option>
+                  </Select>
+                </div>
               </div>
             </Card>
 
-            {/* Charts Grid */}
+            {/* ✅ 30-Day Velocity FULL WIDTH (complete space) */}
+            {velocityChartData.length > 0 ? (
+              <Card theme={theme} className="p-5">
+                <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
+                  <div>
+                    <div className="text-base font-black">30-Day Activity Velocity</div>
+                    {/* <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+                      Completed: {fmtInt(velocityTotals.completed)} • Touched: {fmtInt(velocityTotals.touched)} • Total:{" "}
+                      {fmtInt(velocityTotals.total)}
+                    </div> */}
+                  </div>
+                </div>
+
+                <ResponsiveContainer width="100%" height={360}>
+                  <AreaChart data={velocityChartData}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
+                    />
+                    <XAxis dataKey="date" stroke={subText} style={{ fontSize: "10px" }} />
+                    <YAxis stroke={subText} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend />
+                    <Area
+                      type="monotone"
+                      dataKey="completed"
+                      stroke={CHART_COLORS.success}
+                      fill={CHART_COLORS.success}
+                      fillOpacity={0.25}
+                      name="Completed"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="started"
+                      stroke={CHART_COLORS.secondary}
+                      fill={CHART_COLORS.secondary}
+                      fillOpacity={0.20}
+                      name="Touched"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </Card>
+            ) : (
+              <Card theme={theme} className="p-5">
+                <div className="text-base font-black mb-1">30-Day Activity Velocity</div>
+                <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+                  No activity in last 30 days for current filters.
+                </div>
+                <div
+                  className="h-[360px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+                  style={{
+                    borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                    background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+                    color: subText,
+                  }}
+                >
+                  No data
+                </div>
+              </Card>
+            )}
+
+            {/* ✅ 6-grid ONLY: bar, pie, donut, top team performance, role wise workload, role coverage analysis */}
             <div className="grid gap-4 lg:grid-cols-2">
-            {flatProgressChartData.length > 0 && (
-  <Card theme={theme} className="p-5">
-    <div className="text-base font-black mb-3">Flat-wise Progress</div>
+              {/* 1) Bar */}
+              {flatProgressChartData.length > 0 ? (
+                <Card theme={theme} className="p-5">
+                  <div className="text-base font-black mb-3">Flat-wise Progress</div>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={flatProgressChartData} barSize={18}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+                      <XAxis dataKey="name" stroke={subText} angle={-25} textAnchor="end" height={80} style={{ fontSize: "11px" }} />
+                      <YAxis stroke={subText} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend />
+                      <Bar dataKey="completed" fill={CHART_COLORS.success} name="Completed" label={<BarValueLabel />} />
+                      <Bar dataKey="pending_checker" fill={CHART_COLORS.secondary} name="Pending Checker" label={<BarValueLabel />} />
+                      <Bar dataKey="pending_for_inspector" fill={CHART_COLORS.warning} name="Pending For Checker" label={<BarValueLabel />} />
+                      <Bar dataKey="not_started" fill={CHART_COLORS.danger} name="Not Started" label={<BarValueLabel />} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Card>
+              ) : (
+                <EmptyChart title="Flat-wise Progress" />
+              )}
 
-    <ResponsiveContainer width="100%" height={320}>
-      <BarChart data={flatProgressChartData} barSize={18}>
-        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
-
-        <XAxis
-          dataKey="name"
-          stroke={subText}
-          angle={-25}
-          textAnchor="end"
-          height={80}
-          style={{ fontSize: "11px" }}
-        />
-        <YAxis stroke={subText} />
-
-        <Tooltip content={<CustomTooltip />} />
-        <Legend />
-
-        <Bar dataKey="completed" fill={CHART_COLORS.success} name="Completed" label={<BarValueLabel />} />
-        <Bar dataKey="pending_checker" fill={CHART_COLORS.secondary} name="Pending Checker" label={<BarValueLabel />} />
-<Bar
-  dataKey="pending_for_inspector"
-  fill={CHART_COLORS.warning}
-  name="Pending For Checker"
-  label={<BarValueLabel />}
-/>
-        <Bar dataKey="not_started" fill={CHART_COLORS.danger} name="Not Started" label={<BarValueLabel />} />
-      </BarChart>
-    </ResponsiveContainer>
-  </Card>
-)}
-
-
-
-              
-              {statusPieData.length > 0 && (
+              {/* 2) Pie */}
+              {statusPieData.length > 0 ? (
                 <Card theme={theme} className="p-5">
                   <div className="text-base font-black mb-3">Status Distribution</div>
                   <ResponsiveContainer width="100%" height={320}>
@@ -7570,9 +6894,104 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                     </PieChart>
                   </ResponsiveContainer>
                 </Card>
+              ) : (
+                <EmptyChart title="Status Distribution" />
               )}
 
-              {teamPerformanceData.length > 0 && (
+              {/* 3) Donut (counts, not percent) */}
+             {/* 3) Donut (from API: unit-stage-role-summary) */}
+{unitStageLoading ? (
+  <Card theme={theme} className="p-5">
+    <div className="text-base font-black mb-1">Unit Status Split (Donut)</div>
+    <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+      Loading...
+    </div>
+    <div
+      className="h-[320px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      Loading donut data...
+    </div>
+  </Card>
+) : unitDonutData.length > 0 ? (
+  <Card theme={theme} className="p-5">
+    <div className="text-base font-black mb-1">Unit Status Split (Donut)</div>
+
+    <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+      Total Units: {fmtInt(unitTotalUnits)}
+      {" • "}
+      Yet to Start: {fmtInt(unitCounts.pending_yet_to_start)}
+      {" • "}
+      WIP: {fmtInt(unitCounts.work_in_progress_unit)}
+      {" • "}
+      Yet to Verify: {fmtInt(unitCounts.yet_to_verify)}
+      {" • "}
+      Complete: {fmtInt(unitCounts.complete)}
+    
+    </div>
+
+    <ResponsiveContainer width="100%" height={320}>
+      <PieChart>
+        <Pie
+          data={unitDonutData}
+          dataKey="value"
+          cx="50%"
+          cy="50%"
+          innerRadius={60}
+          outerRadius={95}
+          paddingAngle={2}
+          labelLine={false}
+          label={({ name, value }) => `${name}: ${fmtInt(value)}`}
+        >
+          {unitDonutData.map((entry, idx) => (
+            <Cell key={idx} fill={entry.color} />
+          ))}
+        </Pie>
+
+        <Tooltip content={<CustomTooltip />} />
+        <Legend />
+
+        {/* Center total */}
+        <text
+          x="50%"
+          y="50%"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize="22"
+          fontWeight="900"
+          fill={textColor}
+        >
+          {fmtInt(unitTotalUnits)}
+        </text>
+        <text
+          x="50%"
+          y="50%"
+          dy={22}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize="11"
+          fontWeight="800"
+          fill={subText}
+        >
+          Total Units
+        </text>
+      </PieChart>
+    </ResponsiveContainer>
+  </Card>
+) : (
+  <EmptyChart
+    title="Unit Status Split (Donut)"
+    subtitle={unitStageError || "No unit summary data for current filters."}
+  />
+)}
+
+
+              {/* 4) Top Team Performance */}
+              {teamPerformanceData.length > 0 ? (
                 <Card theme={theme} className="p-5">
                   <div className="text-base font-black mb-3">Top Team Performance</div>
                   <ResponsiveContainer width="100%" height={320}>
@@ -7587,9 +7006,12 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                     </BarChart>
                   </ResponsiveContainer>
                 </Card>
+              ) : (
+                <EmptyChart title="Top Team Performance" />
               )}
 
-              {workloadDistributionData.length > 0 && (
+              {/* 5) Role-wise Workload */}
+              {workloadDistributionData.length > 0 ? (
                 <Card theme={theme} className="p-5">
                   <div className="text-base font-black mb-3">Role-wise Workload</div>
                   <ResponsiveContainer width="100%" height={320}>
@@ -7604,26 +7026,12 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                     </BarChart>
                   </ResponsiveContainer>
                 </Card>
+              ) : (
+                <EmptyChart title="Role-wise Workload" />
               )}
 
-              {velocityChartData.length > 0 && (
-                <Card theme={theme} className="p-5">
-                  <div className="text-base font-black mb-3">30-Day Activity Velocity</div>
-                  <ResponsiveContainer width="100%" height={320}>
-                    <AreaChart data={velocityChartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
-                      <XAxis dataKey="date" stroke={subText} style={{ fontSize: "10px" }} />
-                      <YAxis stroke={subText} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend />
-                      <Area type="monotone" dataKey="completed" stroke={CHART_COLORS.success} fill={CHART_COLORS.success} fillOpacity={0.25} name="Completed" />
-                      <Area type="monotone" dataKey="started" stroke={CHART_COLORS.secondary} fill={CHART_COLORS.secondary} fillOpacity={0.20} name="Touched" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </Card>
-              )}
-
-              {roleRadarData.length > 0 && (
+              {/* 6) Role Coverage Analysis */}
+              {roleRadarData.length > 0 ? (
                 <Card theme={theme} className="p-5">
                   <div className="text-base font-black mb-3">Role Coverage Analysis</div>
                   <ResponsiveContainer width="100%" height={320}>
@@ -7643,538 +7051,113 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                     </RadarChart>
                   </ResponsiveContainer>
                 </Card>
+              ) : (
+                <EmptyChart title="Role Coverage Analysis" />
               )}
             </div>
-            {/* ✅ Full-width Pareto Block */}
-{paretoCategoryData.length > 0 && (
-  <Card theme={theme} className="p-5">
-    <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-      <div>
-        <div className="text-base font-black">Pareto Deep (Pending Concentration)</div>
-        <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
-          Category dimension + optional floor / flat focus.
-        </div>
-      </div>
 
-      <div className="grid gap-2 md:grid-cols-3 w-full lg:w-auto">
-        <div className="min-w-[190px]">
-          <Label theme={theme}>Category dimension</Label>
-          <Select
-            theme={theme}
-            value={paretoFilters.categoryMode}
-            onChange={(e) => setParetoFilters((p) => ({ ...p, categoryMode: e.target.value }))}
-          >
-            {PARETO_CATEGORY_MODES.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        {globalFilters.buildingId && floorOptions.length > 0 && (
-          <div className="min-w-[220px]">
-            <Label theme={theme}>Floors (multi-select)</Label>
-            <Select
-              theme={theme}
-              multiple
-              value={paretoFilters.floorIds}
-              onChange={(e) => {
-                const selected = Array.from(e.target.selectedOptions).map((o) => o.value);
-                setParetoFilters((p) => ({ ...p, floorIds: selected }));
-              }}
-            >
-              {floorOptions.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-        )}
-
-        {flatOptions.length > 0 && (
-         <div className="min-w-[220px]">
-  <div className="flex items-center justify-between mb-1">
-    <Label theme={theme}>Focus flats (multi-select)</Label>
-
-    <button
-      type="button"
-      onClick={toggleParetoSelectAllFlats}
-      className="px-2 py-1 rounded-lg text-[11px] font-black border"
-      style={{
-        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-        color: theme === "dark" ? "#e2e8f0" : "#0f172a",
-        background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
-      }}
-    >
-      {paretoAllFlatsSelected ? "Unselect all" : "Select all"}
-    </button>
-  </div>
-
-  <Select
-    theme={theme}
-    multiple
-    value={paretoFilters.focusFlatIds}
-    onChange={(e) => {
-      const selected = Array.from(e.target.selectedOptions).map((o) => o.value);
-      setParetoFilters((p) => ({ ...p, focusFlatIds: selected }));
-    }}
-  >
-    {flatOptions.map((f) => (
-      <option key={f.id} value={f.id}>
-        {f.label}
-      </option>
-    ))}
-  </Select>
-</div>
-
-        )}
-      </div>
-    </div>
-
-    {/* ✅ Scrollable canvas so X labels never crush */}
-    <div className="overflow-x-auto">
-      <div style={{ minWidth: paretoMinWidth }}>
-        <ResponsiveContainer width="100%" height={460}>
-          <ComposedChart
-            data={paretoCategoryData}
-            margin={{ top: 20, right: 30, left: 10, bottom: 90 }}
-          >
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
-            />
-
-            <XAxis
-              dataKey="categoryLabel"
-              stroke={subText}
-              angle={-30}
-              textAnchor="end"
-              height={95}
-              interval={0}
-              style={{ fontSize: "11px" }}
-              tickFormatter={(v) => (String(v).length > 28 ? `${String(v).slice(0, 28)}…` : v)}
-            />
-
-            <YAxis yAxisId="left" stroke={subText} width={55} />
-            <YAxis
-              yAxisId="right"
-              orientation="right"
-              stroke={subText}
-              domain={[0, 100]}
-              tickFormatter={(v) => `${v}%`}
-              width={50}
-            />
-
-            <Tooltip content={<CustomTooltip />} />
-            <Legend />
-
-            <Bar
-              yAxisId="left"
-              dataKey="pending"
-              name="Pending Items"
-              label={<TopValueLabel />}
-            >
-              {paretoCategoryData.map((entry, idx) => (
-                <Cell key={idx} fill={entry.isTop80 ? CHART_COLORS.danger : CHART_COLORS.muted} />
-              ))}
-            </Bar>
-
-            <Line
-              yAxisId="right"
-              type="monotone"
-              dataKey="cumulativePct"
-              name="Cumulative %"
-              stroke={CHART_COLORS.secondary}
-              strokeWidth={2}
-              dot={false}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  </Card>
-)}
-
-
-            {/* Bottlenecks */}
-            {bottleneckData.length > 0 && (
-              <Card theme={theme} className="p-5 border-red-200">
-                <div className="text-base font-black">Bottleneck Stages</div>
-                <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
-                  Stages with &gt; 50% pending items.
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-3 mt-4">
-                  {bottleneckData.map((s, idx) => (
-                    <div
-                      key={idx}
-                      className="rounded-xl border p-4"
-                      style={{
-                        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-                        background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="font-black">{s.stage}</div>
-                        <div className="text-xl font-black" style={{ color: CHART_COLORS.danger }}>
-                          {s.bottleneckScore}%
-                        </div>
-                      </div>
-                      <div className="text-xs font-semibold mt-2" style={{ color: subText }}>
-                        Pending {fmtInt(s.pendingItems)} / {fmtInt(s.totalItems)}
-                      </div>
-                      <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: theme === "dark" ? "#0f172a" : "#e2e8f0" }}>
-                        <div className="h-full" style={{ width: `${s.bottleneckScore}%`, background: CHART_COLORS.danger }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            {/* Recent activity */}
-            {/* {recentActivity && (
-              <div className="grid gap-4 md:grid-cols-4">
-                {[
-                  { label: "Total Activity (7d)", value: recentActivity.total },
-                  { label: "Completed", value: recentActivity.counts.completed || 0 },
-                  { label: "Pending Checker", value: recentActivity.counts.pending_checker || 0 },
-{ label: "Pending For Checker", value: recentActivity.counts.pending_for_inspector || 0 },
-                ].map((x, idx) => (
-                  <Card theme={theme} className="p-5" key={idx}>
-                    <div className="text-[11px] font-bold uppercase" style={{ color: subText }}>
-                      {x.label}
-                    </div>
-                    <div className="text-3xl font-black mt-1">{fmtInt(x.value)}</div>
-                  </Card>
-                ))}
-              </div>
-              
-            )} */}
-            
-
-            {/* Flat hotspots */}
-            {locationHotspots.length > 0 && (
+            {/* ✅ Pareto Block (checkbox multiselect) */}
+            {paretoCategoryData.length > 0 && (
               <Card theme={theme} className="p-5">
-                <div className="flex items-end justify-between gap-3">
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                   <div>
-                    <div className="text-base font-black">Flat Hotspots</div>
+                    <div className="text-base font-black">Pareto Deep (Pending Concentration)</div>
                     <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
-                      Top flats with open issues (click to open report).
+                      Category dimension + optional floor / flat focus.
                     </div>
+                  </div>
+
+                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 w-full lg:w-auto">
+                    <div className="min-w-[220px]">
+                      <Label theme={theme}>Category dimension</Label>
+                      <Select
+                        theme={theme}
+                        className="h-[42px]"
+                        value={paretoFilters.categoryMode}
+                        onChange={(e) => setParetoFilters((p) => ({ ...p, categoryMode: e.target.value }))}
+                      >
+                        {PARETO_CATEGORY_MODES.map((m) => (
+                          <option key={m.value} value={m.value}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+
+                    {globalFilters.buildingId && floorOptions.length > 0 && (
+                      <MultiSelectDropdown
+                        theme={theme}
+                        label="Floors (multi-select)"
+                        options={floorOptions}
+                        value={paretoFilters.floorIds}
+                        onChange={(arr) => setParetoFilters((p) => ({ ...p, floorIds: arr }))}
+                        placeholder="All floors"
+                        className="min-w-[240px]"
+                      />
+                    )}
+
+                    {flatOptions.length > 0 && (
+                      <MultiSelectDropdown
+                        theme={theme}
+                        label="Focus flats (multi-select)"
+                        options={flatOptions}
+                        value={paretoFilters.focusFlatIds}
+                        onChange={(arr) => setParetoFilters((p) => ({ ...p, focusFlatIds: arr }))}
+                        placeholder="All flats"
+                        className="min-w-[260px]"
+                      />
+                    )}
                   </div>
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-3 mt-4">
-                  {locationHotspots.map((f) => {
-                    const meta = f.meta || {};
-                    const label = meta.number || meta.typeName
-                      ? `Flat ${meta.number || f.flatId}${meta.typeName ? ` • ${meta.typeName}` : ""}`
-                      : `Flat #${f.flatId}`;
+                <div className="overflow-x-auto">
+                  <div style={{ minWidth: paretoMinWidth }}>
+                    <ResponsiveContainer width="100%" height={460}>
+                      <ComposedChart data={paretoCategoryData} margin={{ top: 20, right: 30, left: 10, bottom: 90 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+                        <XAxis
+                          dataKey="categoryLabel"
+                          stroke={subText}
+                          angle={-30}
+                          textAnchor="end"
+                          height={95}
+                          interval={0}
+                          style={{ fontSize: "11px" }}
+                          tickFormatter={(v) => (String(v).length > 28 ? `${String(v).slice(0, 28)}…` : v)}
+                        />
+                        <YAxis yAxisId="left" stroke={subText} width={55} />
+                        <YAxis
+                          yAxisId="right"
+                          orientation="right"
+                          stroke={subText}
+                          domain={[0, 100]}
+                          tickFormatter={(v) => `${v}%`}
+                          width={50}
+                        />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Legend />
 
-                    const completionPct =
-                      f.total > 0 ? Math.round((safeNumber(f.completed) / safeNumber(f.total)) * 100) : 0;
+                        <Bar yAxisId="left" dataKey="pending" name="Pending Items" label={<TopValueLabel />}>
+                          {paretoCategoryData.map((entry, idx) => (
+                            <Cell key={idx} fill={entry.isTop80 ? CHART_COLORS.danger : CHART_COLORS.muted} />
+                          ))}
+                        </Bar>
 
-                    return (
-                      <button
-                        key={f.flatId}
-                        type="button"
-                        onClick={() => handleOpenFlatReport(f.flatId, f.meta || null)}
-                        className="text-left rounded-xl border p-4 hover:shadow-md transition-all"
-                        style={{
-                          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-                          background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
-                        }}
-                      >
-                        <div className="font-black">{label}</div>
-                        {meta.levelName && (
-                          <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
-                            {meta.levelName}
-                          </div>
-                        )}
-                        <div className="text-xs font-semibold mt-2" style={{ color: subText }}>
-                          Total {fmtInt(f.total)} • Open {fmtInt(f.openIssues)}
-                        </div>
-
-                        <div className="mt-3">
-                          <div className="flex justify-between text-xs font-semibold" style={{ color: subText }}>
-                            <span>Completion</span>
-                            <span style={{ color: textColor }}>{completionPct}%</span>
-                          </div>
-                          <div className="mt-1 h-2 rounded-full overflow-hidden" style={{ background: theme === "dark" ? "#0f172a" : "#e2e8f0" }}>
-                            <div className="h-full" style={{ width: `${completionPct}%`, background: CHART_COLORS.success }} />
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="cumulativePct"
+                          name="Cumulative %"
+                          stroke={CHART_COLORS.secondary}
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               </Card>
             )}
-
-            {/* Question hotspots */}
-            <Card theme={theme} className="p-5">
-              <div className="flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <div className="text-base font-black">Question Hotspots (Slice-wise)</div>
-                  <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
-                    Stage + Checklist + Building + Floor + Room + Status Bucket
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setQuestionFilters({
-                      stageId: "",
-                      categoryId: "",
-                      buildingId: "",
-                      floorId: "",
-                      roomCategory: "",
-                      statusBucket: "open",
-                    })
-                  }
-                  className="px-3 py-2 rounded-xl text-xs font-black border"
-                  style={{
-                    borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-                    color: subText,
-                    background: theme === "dark" ? "rgba(2,6,23,0.4)" : "rgba(248,250,252,0.95)",
-                  }}
-                >
-                  Clear filters
-                </button>
-              </div>
-
-              <div className="grid gap-3 mt-4 md:grid-cols-6">
-                <div>
-                  <Label theme={theme}>Stage</Label>
-                  <Select
-                    theme={theme}
-                    value={questionFilters.stageId}
-                    onChange={(e) => setQuestionFilters((p) => ({ ...p, stageId: e.target.value }))}
-                  >
-                    <option value="">All</option>
-                    {Object.entries(stageMap).map(([sid, label]) => (
-                      <option key={sid} value={sid}>
-                        {label}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-
-                <div>
-                  <Label theme={theme}>Checklist title</Label>
-                  <Select
-                    theme={theme}
-                    value={questionFilters.categoryId}
-                    onChange={(e) => setQuestionFilters((p) => ({ ...p, categoryId: e.target.value }))}
-                  >
-                    <option value="">All</option>
-                    {checklistCategoryOptions.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-
-                <div>
-                  <Label theme={theme}>Building</Label>
-                  <Select
-                    theme={theme}
-                    value={questionFilters.buildingId}
-                    onChange={(e) =>
-                      setQuestionFilters((p) => ({
-                        ...p,
-                        buildingId: e.target.value,
-                        floorId: "",
-                      }))
-                    }
-                  >
-                    <option value="">All</option>
-                    {buildingOptions.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.label}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-
-                <div>
-                  <Label theme={theme}>Floor</Label>
-                  <Select
-                    theme={theme}
-                    value={questionFilters.floorId}
-                    onChange={(e) => setQuestionFilters((p) => ({ ...p, floorId: e.target.value }))}
-                  >
-                    <option value="">All</option>
-                    {questionFloorOptions.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.label}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-
-                <div>
-                  <Label theme={theme}>Room</Label>
-                  <Select
-                    theme={theme}
-                    value={questionFilters.roomCategory}
-                    onChange={(e) => setQuestionFilters((p) => ({ ...p, roomCategory: e.target.value }))}
-                  >
-                    <option value="">All</option>
-                    {roomCategoryOptions.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-
-                <div>
-                  <Label theme={theme}>Status bucket</Label>
-                  <Select
-                    theme={theme}
-                    value={questionFilters.statusBucket}
-                    onChange={(e) => setQuestionFilters((p) => ({ ...p, statusBucket: e.target.value }))}
-                  >
-                    <option value="open">Open only</option>
-                    <option value="closed">Completed only</option>
-                    <option value="all">All statuses</option>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {questionStatusData.length === 0 ? (
-                  <div className="text-sm font-semibold" style={{ color: subText }}>
-                    No questions match the current filters.
-                  </div>
-                ) : (
-                  questionStatusData.map((q, idx) => (
-                    <div
-                      key={idx}
-                      className="rounded-xl border p-4"
-                      style={{
-                        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-                        background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="font-black">{q.question}</div>
-                          {q.categoryLabel && (
-                            <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
-                              Category: {q.categoryLabel}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right text-xs font-black">
-                          <div>Total: {fmtInt(q.total)}</div>
-                          <div style={{ color: CHART_COLORS.danger }}>
-                            Open: {fmtInt(q.openCount)} ({q.openPct}%)
-                          </div>
-                          <div style={{ color: CHART_COLORS.success }}>
-                            Done: {fmtInt(q.completed)} ({q.completedPct}%)
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: theme === "dark" ? "#0f172a" : "#e2e8f0" }}>
-                        <div className="h-full" style={{ width: `${q.openPct}%`, background: CHART_COLORS.danger }} />
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </Card>
-
-            {/* Roles & Access Overview */}
-            {/* {(configAndActivity.coverageList?.length ||
-              configAndActivity.inactiveAssignments?.length ||
-              configAndActivity.unconfiguredActivity?.length ||
-              configByUser.length) && (
-              <div className="grid gap-4 lg:grid-cols-2">
-                {configAndActivity.coverageList?.length > 0 && (
-                  <Card theme={theme} className="p-5">
-                    <div className="text-base font-black mb-3">Stage & Role Coverage (Config)</div>
-                    <div className="space-y-3 max-h-[360px] overflow-auto pr-1">
-                      {configAndActivity.coverageList.map((entry) => (
-                        <div
-                          key={entry.stageId}
-                          className="rounded-xl border p-4"
-                          style={{
-                            borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-                            background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
-                          }}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="font-black">{entry.stageLabel}</div>
-                            <div className="text-[11px] font-bold" style={{ color: subText }}>
-                              {entry.roles.reduce((s, r) => s + r.userCount, 0)} users mapped
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap gap-2 mt-3">
-                            {entry.roles.map((r) => (
-                              <span
-                                key={r.roleName}
-                                className="px-3 py-1 rounded-full text-xs font-bold border"
-                                style={{
-                                  borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-                                  color: textColor,
-                                }}
-                              >
-                                {r.roleName} • {r.userCount}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                )}
-
-                {configByUser.length > 0 && (
-                  <Card theme={theme} className="p-5">
-                    <div className="text-base font-black mb-3">Per-user Configuration</div>
-                    <div className="space-y-3 max-h-[360px] overflow-auto pr-1">
-                      {configByUser.map((u) => (
-                        <div
-                          key={u.userId}
-                          className="rounded-xl border p-4"
-                          style={{
-                            borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-                            background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
-                          }}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="font-black">{u.userName}</div>
-                            <div className="text-[11px] font-bold" style={{ color: subText }}>
-                              {u.accesses.length} access
-                            </div>
-                          </div>
-                          <div className="mt-2 text-xs font-semibold space-y-1" style={{ color: subText }}>
-                            {u.accesses.slice(0, 4).map((acc, idx) => (
-                              <div key={idx}>
-                                <span className="font-bold">{(acc.roleNames || []).join(", ") || "Role"}</span>{" "}
-                                on{" "}
-                                <span>
-                                  {stageMap[acc.stageId] || (acc.stageId ? `Stage #${acc.stageId}` : "-")}
-                                </span>
-                              </div>
-                            ))}
-                            {u.accesses.length > 4 && <div className="opacity-70">+{u.accesses.length - 4} more…</div>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                )}
-              </div>
-            )} */}
 
             {/* Detailed Item View */}
             <Card theme={theme} className="overflow-hidden">
@@ -8189,10 +7172,7 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
 
               <div className="max-h-[520px] overflow-auto">
                 <table className="min-w-full text-sm">
-                  <thead
-                    className="sticky top-0 z-10"
-                    style={{ background: theme === "dark" ? "#0f172a" : "#f1f5f9" }}
-                  >
+                  <thead className="sticky top-0 z-10" style={{ background: theme === "dark" ? "#0f172a" : "#f1f5f9" }}>
                     <tr>
                       <th className="text-left px-5 py-3 font-black">Item</th>
                       <th className="text-left px-5 py-3 font-black">Status</th>
@@ -8216,14 +7196,11 @@ const TopValueLabel = ({ x, y, width, value, fill }) => {
                         const lastTime = latest.checked_at || latest.supervised_at || latest.maker_at || null;
 
                         const stageId = item.checklist?.stage_id;
-                        const stageLabel = (stageId && stageMap[stageId]) || (stageId ? `Stage #${stageId}` : "-");
+                        const stageLabel =
+                          (stageId && stageMap[stageId]) || (stageId ? `Stage #${stageId}` : "-");
 
                         return (
-                          <tr
-                            key={item.item_id}
-                            className="border-t"
-                            style={{ borderColor: theme === "dark" ? "#1f2937" : "#e2e8f0" }}
-                          >
+                          <tr key={item.item_id} className="border-t" style={{ borderColor: theme === "dark" ? "#1f2937" : "#e2e8f0" }}>
                             <td className="px-5 py-3 align-top">
                               <div className="font-black">{item.item_title}</div>
                               <div className="text-xs font-semibold mt-1" style={{ color: subText }}>

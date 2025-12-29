@@ -130,15 +130,7 @@ const toCsv = (arr) => {
 
 const getFlatIdFromRow = (row) => {
   if (!row || typeof row !== "object") return null;
-  return (
-    row.flat_id ??
-    row.flat ??
-    row.unit_id ??
-    row.unit ??
-    row.id ??
-    row.pk ??
-    null
-  );
+  return row.flat_id ?? row.flat ?? row.unit_id ?? row.unit ?? row.id ?? row.pk ?? null;
 };
 
 const getNiceCellText = (v) => {
@@ -160,10 +152,7 @@ const PERCENT_COLS = new Set([
   "overall_percent",
 ]);
 
-const RED_HIGHLIGHT_COLS = new Set([
-  "flat_readiness",
-  "maker_flat_readiness_percent",
-]);
+const RED_HIGHLIGHT_COLS = new Set(["flat_readiness", "maker_flat_readiness_percent"]);
 const DAYS_COUNT_COL = "no_of_days_count";
 
 const fmtPercent = (v) => {
@@ -227,24 +216,48 @@ function useDebouncedValue(value, delay = 250) {
 }
 
 /* ---------------- UI components ---------------- */
+const SectionCard = ({ children, className = "" }) => (
+  <div
+    className={[
+      "rounded-2xl border bg-white shadow-sm",
+      "ring-1 ring-slate-900/5",
+      className,
+    ].join(" ")}
+  >
+    {children}
+  </div>
+);
+
+const SoftLabel = ({ children }) => (
+  <div className="text-[11px] font-semibold tracking-wide text-slate-500">{children}</div>
+);
+
 const Card = ({ title, value, Icon, onClick }) => {
   const clickable = typeof onClick === "function";
   const Comp = clickable ? "button" : "div";
+
   return (
     <Comp
       type={clickable ? "button" : undefined}
       onClick={onClick}
       className={[
-        "min-w-[220px] rounded-xl border bg-white px-4 py-3 shadow-sm text-left",
+        "min-w-[220px] rounded-2xl border bg-white px-4 py-3 text-left",
         "flex items-center justify-between gap-3",
-        clickable ? "hover:bg-slate-50 cursor-pointer" : "",
+        "shadow-sm ring-1 ring-slate-900/5",
+        clickable
+          ? "hover:shadow-md hover:-translate-y-[1px] transition-all cursor-pointer"
+          : "",
       ].join(" ")}
+      aria-label={clickable ? `Open ${title}` : undefined}
     >
       <div className="min-w-0">
-        <div className="text-[12px] font-medium text-slate-600">{title}</div>
-        <div className="mt-1 text-2xl font-semibold text-slate-900">{value}</div>
+        <div className="text-[12px] font-semibold text-slate-600 truncate">{title}</div>
+        <div className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">
+          {value}
+        </div>
       </div>
-      <div className="shrink-0 rounded-lg border bg-slate-50 p-2 text-slate-700">
+
+      <div className="shrink-0 rounded-2xl border bg-slate-50 p-2.5 text-slate-800 ring-1 ring-slate-900/5">
         <Icon size={18} />
       </div>
     </Comp>
@@ -252,9 +265,11 @@ const Card = ({ title, value, Icon, onClick }) => {
 };
 
 const MiniStat = ({ label, value }) => (
-  <div className="rounded-lg border bg-white px-3 py-2">
-    <div className="text-[11px] font-medium text-slate-600">{label}</div>
-    <div className="mt-0.5 text-lg font-semibold text-slate-900">{value}</div>
+  <div className="rounded-xl border bg-gradient-to-b from-white to-slate-50 px-3 py-2 ring-1 ring-slate-900/5">
+    <div className="text-[11px] font-semibold text-slate-600">{label}</div>
+    <div className="mt-0.5 text-lg font-extrabold tracking-tight text-slate-900">
+      {value}
+    </div>
   </div>
 );
 
@@ -264,9 +279,10 @@ const ChipButton = ({ active, children, onClick, title }) => (
     title={title}
     onClick={onClick}
     className={[
-      "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium",
+      "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold",
+      "ring-1 ring-slate-900/5",
       active
-        ? "border-slate-900 bg-slate-900 text-white"
+        ? "border-slate-900 bg-slate-900 text-white shadow-sm"
         : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
     ].join(" ")}
   >
@@ -275,7 +291,7 @@ const ChipButton = ({ active, children, onClick, title }) => (
 );
 
 const FilterLabel = ({ children }) => (
-  <div className="text-xs font-medium text-slate-600">{children}</div>
+  <div className="text-xs font-semibold text-slate-600">{children}</div>
 );
 
 /** ✅ Multi-select dropdown with checkboxes + Search + Select All / Unselect All */
@@ -297,9 +313,7 @@ const MultiSelectDropdown = ({
   const filtered = useMemo(() => {
     const s = String(q || "").trim().toLowerCase();
     if (!s) return options || [];
-    return (options || []).filter((o) =>
-      String(o?.label || "").toLowerCase().includes(s)
-    );
+    return (options || []).filter((o) => String(o?.label || "").toLowerCase().includes(s));
   }, [q, options]);
 
   const selectedCount = (value || []).length;
@@ -346,33 +360,35 @@ const MultiSelectDropdown = ({
 
   return (
     <div ref={wrapRef} className="relative">
-      <FilterLabel>{label}</FilterLabel>
+      <SoftLabel>{label}</SoftLabel>
 
       <button
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen((s) => !s)}
         className={[
-          "mt-1 w-full rounded-lg border bg-white px-3 py-2 text-left text-sm",
+          "mt-1 w-full rounded-xl border bg-white px-3 py-2 text-left text-sm",
           "flex items-center justify-between gap-2",
+          "shadow-sm ring-1 ring-slate-900/5",
           disabled ? "opacity-60 cursor-not-allowed" : "hover:bg-slate-50",
         ].join(" ")}
       >
-        <span className={selectedCount ? "text-slate-900" : "text-slate-500"}>
+        <span className={selectedCount ? "text-slate-900 font-semibold" : "text-slate-500"}>
           {buttonText}
         </span>
-        <ChevronDown size={16} className="text-slate-500" />
+        <ChevronDown size={16} className="text-slate-400" />
       </button>
 
       {open ? (
         <div
           className={[
-            "absolute z-30 mt-2 w-full rounded-xl border bg-white shadow-lg",
+            "absolute z-30 mt-2 w-full rounded-2xl border bg-white shadow-xl",
+            "ring-1 ring-slate-900/10 overflow-hidden",
             compact ? "p-2" : "p-3",
           ].join(" ")}
         >
-          <div className="flex items-center gap-2 rounded-lg border bg-white px-2 py-1.5">
-            <Search size={14} className="text-slate-500" />
+          <div className="flex items-center gap-2 rounded-xl border bg-white px-2 py-1.5 ring-1 ring-slate-900/5">
+            <Search size={14} className="text-slate-400" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -385,14 +401,14 @@ const MultiSelectDropdown = ({
             <button
               type="button"
               onClick={selectAllShown}
-              className="rounded-lg border bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-xl border bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 ring-1 ring-slate-900/5"
             >
               Select all
             </button>
             <button
               type="button"
               onClick={unselectAllShown}
-              className="rounded-lg border bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-xl border bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 ring-1 ring-slate-900/5"
             >
               Unselect all
             </button>
@@ -400,14 +416,14 @@ const MultiSelectDropdown = ({
               <button
                 type="button"
                 onClick={clearAll}
-                className="ml-auto rounded-lg border bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="ml-auto rounded-xl border bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 ring-1 ring-slate-900/5"
               >
                 Clear
               </button>
             ) : null}
           </div>
 
-          <div className="mt-2 max-h-56 overflow-auto rounded-lg border">
+          <div className="mt-2 max-h-56 overflow-auto rounded-xl border">
             {filtered.length ? (
               filtered.map((o) => {
                 const isOn = selectedSet.has(String(o.value));
@@ -416,21 +432,24 @@ const MultiSelectDropdown = ({
                     key={String(o.value)}
                     type="button"
                     onClick={() => toggleVal(o.value)}
-                    className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 border-b last:border-0 hover:bg-slate-50"
+                    className={[
+                      "w-full px-3 py-2 text-left text-sm flex items-center gap-2",
+                      "border-b last:border-0",
+                      isOn ? "bg-slate-50" : "",
+                      "hover:bg-slate-50",
+                    ].join(" ")}
                   >
                     {isOn ? (
                       <CheckSquare size={16} className="text-slate-900" />
                     ) : (
                       <Square size={16} className="text-slate-400" />
                     )}
-                    <span className="text-slate-800">{o.label}</span>
+                    <span className="text-slate-800 font-medium">{o.label}</span>
                   </button>
                 );
               })
             ) : (
-              <div className="px-3 py-3 text-sm text-slate-600">
-                No options found.
-              </div>
+              <div className="px-3 py-3 text-sm text-slate-600">No options found.</div>
             )}
           </div>
         </div>
@@ -458,11 +477,10 @@ const resolveProjectNameLocal = (projectId) => {
     localStorage.getItem("project_name");
   if (direct && String(direct).trim()) return String(direct).trim();
 
-  // 2) active object (common in many apps)
+  // 2) active object
   const activeRaw = localStorage.getItem("active") || localStorage.getItem("ACTIVE_PROJECT");
   const active = safeJson(activeRaw);
   if (active && typeof active === "object") {
-    // try common shapes
     const candidates = [
       active?.project_name,
       active?.projectName,
@@ -475,14 +493,13 @@ const resolveProjectNameLocal = (projectId) => {
 
     if (candidates.length) return String(candidates[0]).trim();
 
-    // sometimes active has id->name map
     if (active?.id && String(active.id) === pid) {
       const nm = active?.name || active?.project_name || active?.title;
       if (nm) return String(nm).trim();
     }
   }
 
-  // 3) try a stored list
+  // 3) stored list
   const listRaw = localStorage.getItem("projects") || localStorage.getItem("PROJECTS");
   const list = safeJson(listRaw);
   if (Array.isArray(list)) {
@@ -618,7 +635,7 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
     async (pid) => {
       if (!pid) return;
 
-      // 1) location.state (if your ProjectOverview passes it)
+      // 1) location.state
       const stName =
         location?.state?.projectName ||
         location?.state?.project_name ||
@@ -649,10 +666,7 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
 
         for (const url of endpoints) {
           try {
-            const res = await axios.get(url, {
-              headers: authHeaders(),
-              signal,
-            });
+            const res = await axios.get(url, { headers: authHeaders(), signal });
             const d = res?.data ?? null;
 
             const name =
@@ -671,12 +685,9 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
             }
           } catch (e) {
             if (e?.name === "CanceledError" || e?.code === "ERR_CANCELED") return;
-            // ignore and try next endpoint
           }
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     },
     [location]
   );
@@ -845,9 +856,7 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
         return;
       }
 
-      const settled = await Promise.allSettled(
-        ids.map((bid) => getLevelsWithFlatsByBuilding(bid))
-      );
+      const settled = await Promise.allSettled(ids.map((bid) => getLevelsWithFlatsByBuilding(bid)));
 
       const floorMap = new Map(); // floorKey -> {value,label}
       const unitMap = new Map(); // unitId -> {value,label,floorKey}
@@ -861,8 +870,7 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
         const levels = normalizeList(r.value);
         levels.forEach((lvl) => {
           const floorName = lvl?.name ? String(lvl.name) : "Floor";
-          const rawLevelId =
-            lvl?.id ?? lvl?.floor_id ?? lvl?.level_id ?? lvl?.pk ?? null;
+          const rawLevelId = lvl?.id ?? lvl?.floor_id ?? lvl?.level_id ?? lvl?.pk ?? null;
 
           const floorKey = `${bid}:${String(rawLevelId ?? floorName)}`;
           const floorLabel = `${towerLabel} • ${floorName}`;
@@ -895,11 +903,7 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
             const label = labelParts.join(" • ") || `Unit #${id}`;
             const finalLabel = typeName ? `${label} (${typeName})` : label;
 
-            unitMap.set(String(id), {
-              value: String(id),
-              label: finalLabel,
-              floorKey,
-            });
+            unitMap.set(String(id), { value: String(id), label: finalLabel, floorKey });
           });
         });
       });
@@ -1106,9 +1110,7 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
   const wipColumns = useMemo(() => {
     const cols =
       (Array.isArray(wipCols) && wipCols.length ? wipCols : null) ||
-      (wipRows?.[0] && typeof wipRows[0] === "object"
-        ? Object.keys(wipRows[0])
-        : []);
+      (wipRows?.[0] && typeof wipRows[0] === "object" ? Object.keys(wipRows[0]) : []);
     return (cols || []).filter((c) => !HIDE_COLS.has(String(c)));
   }, [wipCols, wipRows]);
 
@@ -1136,13 +1138,14 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
       <button
         type="button"
         onClick={() =>
-          setPendingFrom((prev) =>
-            active ? prev.filter((x) => x !== code) : [...prev, code]
-          )
+          setPendingFrom((prev) => (active ? prev.filter((x) => x !== code) : [...prev, code]))
         }
         className={[
-          "rounded-full border px-3 py-1 text-xs font-medium",
-          active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+          "rounded-full border px-3 py-1.5 text-xs font-semibold",
+          "ring-1 ring-slate-900/5",
+          active
+            ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
         ].join(" ")}
       >
         {label}
@@ -1150,20 +1153,21 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
     );
   };
 
+  const stageNameByIdMemo = stageNameById;
+  const towerNameByIdMemo = towerNameById;
+
   const activeFiltersText = useMemo(() => {
     const { stages, towers, floors, flats, roles } = getSelectedFilters();
 
     const sNames = stages
-      .map((id) => stageNameById.get(String(id)) || `Stage#${id}`)
+      .map((id) => stageNameByIdMemo.get(String(id)) || `Stage#${id}`)
       .slice(0, 4);
 
     const tNames = towers
-      .map((id) => towerNameById.get(String(id)) || `Tower#${id}`)
+      .map((id) => towerNameByIdMemo.get(String(id)) || `Tower#${id}`)
       .slice(0, 3);
 
-    const fNames = floors
-      .map((fk) => floorNameByKey.get(String(fk)) || String(fk))
-      .slice(0, 2);
+    const fNames = floors.map((fk) => floorNameByKey.get(String(fk)) || String(fk)).slice(0, 2);
 
     const parts = [];
     if (stages.length) parts.push(`Stage: ${sNames.join(", ")}${stages.length > 4 ? "…" : ""}`);
@@ -1172,8 +1176,8 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
     if (flats.length) parts.push(`Units: ${flats.length}`);
     if (roles.length) parts.push(`Pending From: ${roles.join(", ")}`);
 
-    return parts.length ? parts.join(" • ") : "No extra filters";
-  }, [getSelectedFilters, stageNameById, towerNameById, floorNameByKey]);
+    return parts.length ? parts.join(" • ") : "";
+  }, [getSelectedFilters, stageNameByIdMemo, towerNameByIdMemo, floorNameByKey]);
 
   const modalStageName = useMemo(() => {
     const sid = wipCtx?.stageId;
@@ -1215,8 +1219,19 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
       const prefetchedStats = res?.data ?? null;
 
       const flatMeta = {
-        number: row.flat_number ?? row.unit_number ?? row.number ?? row.unit_no ?? row.unit_label ?? null,
-        typeName: row.flat_type_name ?? row.unit_type_name ?? row.type_name ?? row.type ?? null,
+        number:
+          row.flat_number ??
+          row.unit_number ??
+          row.number ??
+          row.unit_no ??
+          row.unit_label ??
+          null,
+        typeName:
+          row.flat_type_name ??
+          row.unit_type_name ??
+          row.type_name ??
+          row.type ??
+          null,
         levelName: row.level_name ?? row.floor_name ?? row.level ?? null,
       };
 
@@ -1244,398 +1259,417 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
     setWipRole((prev) => (prev === code ? "" : code));
   };
 
+  const asOfText = meta?.as_of || meta?.asOf || meta?.date || "";
+
   return (
-    <div className="p-4 md:p-6">
-      {/* header */}
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          {/* ✅ Project Name at top */}
-          <div className="text-xl font-semibold text-slate-900 truncate">
-            {projectName ? projectName : projectId ? `Project #${projectId}` : "Project"}
-          </div>
-          <div className="mt-0.5 text-xs text-slate-500">
-           
-            <button
-                type="button"
-                onClick={() => navigate("/config")}
-                className="w-10 h-10 rounded-xl border font-black"
-                // style={{
-                //   borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-                //   color: textColor,
-                //   background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.9)",
-                // }}
-              >
-                ←
-              </button>
-          </div>
-        </div>
+    <div className="bg-slate-50">
+      <div className="mx-auto max-w-[1400px] px-4 md:px-6 pt-5 md:pt-7 pb-2 space-y-4">
+        {/* Header */}
+        <SectionCard className="p-4 md:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate("/config")}
+                  className="h-10 w-10 rounded-xl border bg-white text-slate-800 shadow-sm ring-1 ring-slate-900/5 hover:bg-slate-50"
+                  aria-label="Back"
+                  title="Back"
+                >
+                  ←
+                </button>
 
-        <button
-          type="button"
-          onClick={fetchSummary}
-          className="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-        >
-          <RefreshCcw size={16} />
-          Refresh
-        </button>
-      </div>
-
-      {/* filters */}
-      <div className="mb-4 rounded-xl border bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm font-semibold text-slate-900">Filters</div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="rounded-lg border bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Reset
-            </button>
-            <button
-              type="button"
-              onClick={fetchSummary}
-              className="rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:opacity-90"
-            >
-              Apply
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <MultiSelectDropdown
-            label="Stages"
-            value={stageIds}
-            options={stageOptions}
-            onChange={setStageIds}
-            placeholder="Select stages"
-          />
-
-          <MultiSelectDropdown
-            label="Buildings / Towers"
-            value={buildingIds}
-            options={buildingOptions}
-            onChange={(vals) => {
-              setBuildingIds(vals);
-              setFloorIds([]);
-              setUnitIds([]);
-            }}
-            placeholder="Select towers"
-          />
-
-          <MultiSelectDropdown
-            label="Floors"
-            value={floorIds}
-            options={floorOptions}
-            onChange={(vals) => {
-              setFloorIds(vals);
-              setUnitIds([]);
-            }}
-            placeholder={buildingIds.length ? "Select floors" : "Select tower first"}
-            disabled={!buildingIds.length}
-          />
-
-          <MultiSelectDropdown
-            label="Units"
-            value={unitIds}
-            options={unitOptions}
-            onChange={setUnitIds}
-            placeholder={
-              !buildingIds.length
-                ? "Select tower first"
-                : floorIds.length
-                ? "Select units (filtered by floor)"
-                : "Select units"
-            }
-            disabled={!buildingIds.length}
-          />
-        </div>
-
-        <div className="mt-4">
-          <FilterLabel>Pending From (optional)</FilterLabel>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <RoleChip code="MAKER" label="Maker" />
-            <RoleChip code="INSPECTOR" label="Inspector" />
-            <RoleChip code="CHECKER" label="Checker" />
-            <RoleChip code="SUPERVISOR" label="Supervisor" />
-          </div>
-        </div>
-      </div>
-
-      {err ? (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {err}
-        </div>
-      ) : null}
-
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-sm font-semibold text-slate-900">KPIs</div>
-        <div className="text-xs text-slate-500">Scroll horizontally if needed</div>
-      </div>
-
-      <div className="flex gap-3 overflow-x-auto pb-2">
-        {loading
-          ? Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="min-w-[220px] h-[76px] animate-pulse rounded-xl border bg-white px-4 py-3"
-              >
-                <div className="h-3 w-28 rounded bg-slate-100" />
-                <div className="mt-3 h-6 w-16 rounded bg-slate-100" />
-              </div>
-            ))
-          : cards.map((c) => (
-              <Card
-                key={c.key}
-                title={c.title}
-                value={c.value}
-                Icon={c.Icon}
-                onClick={c.onClick}
-              />
-            ))}
-      </div>
-
-      {/* ---------------- WIP MODAL ---------------- */}
-      {wipOpen ? (
-        <div
-          className="fixed inset-0 z-50 overflow-y-auto bg-black/40"
-          onMouseDown={() => setWipOpen(false)}
-        >
-          <div className="min-h-full px-4 pb-10 pt-20 md:pt-24">
-            <div
-              className="mx-auto w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl"
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <div className="sticky top-0 z-10 border-b bg-white p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-base font-semibold text-slate-900">
-                      Work In Progress Breakdown
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {modalStageName ? <span>Stage: {modalStageName}</span> : null}
-                      {modalTowerName ? <span> • Tower: {modalTowerName}</span> : null}
-                      {wipRole ? <span> • Role: {roleLabel(wipRole)}</span> : null}
-                      {modalAsOf ? <span> • As of: {modalAsOf}</span> : null}
-                    </div>
+                <div className="min-w-0">
+                  <div className="text-lg md:text-xl font-extrabold tracking-tight text-slate-900 truncate">
+                    {projectName ? projectName : projectId ? `Project #${projectId}` : "Project"}
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={refreshWipAll}
-                      className="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      <RefreshCcw size={14} />
-                      Refresh
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={exportWipExcel}
-                      className="inline-flex items-center gap-2 rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:opacity-90"
-                    >
-                      <Download size={14} />
-                      Export Excel
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setWipOpen(false)}
-                      className="rounded-lg border bg-white p-2 text-slate-700 hover:bg-slate-50"
-                      aria-label="Close"
-                    >
-                      <X size={16} />
-                    </button>
+                  <div className="mt-0.5 text-xs font-semibold text-slate-500">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="truncate">{activeFiltersText}</span>
+                      
+                    </span>
                   </div>
                 </div>
-              </div>
-
-              <div className="p-4">
-                {wipBreakdownErr ? (
-                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                    {wipBreakdownErr}
-                  </div>
-                ) : null}
-
-                {wipErr ? (
-                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                    {wipErr}
-                  </div>
-                ) : null}
-
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-xs font-semibold text-slate-700">Summary</div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ChipButton active={!wipRole} onClick={() => setWipRole("")} title="Show all roles">
-                      All Roles
-                    </ChipButton>
-
-                    {Object.keys(byPendingFrom || {}).map((k) => (
-                      <ChipButton
-                        key={k}
-                        active={String(wipRole).toUpperCase() === String(k).toUpperCase()}
-                        onClick={() => toggleModalRole(k)}
-                        title="Filter table + breakdown by this role"
-                      >
-                        {roleLabel(k)} • {fmtInt(byPendingFrom[k])}
-                      </ChipButton>
-                    ))}
-                  </div>
-                </div>
-
-                {wipBreakdownLoading ? (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {Array.from({ length: 4 }).map((_, i) => (
-                      <div key={i} className="h-[54px] animate-pulse rounded-lg border bg-white px-3 py-2">
-                        <div className="h-3 w-20 rounded bg-slate-100" />
-                        <div className="mt-2 h-5 w-12 rounded bg-slate-100" />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <MiniStat label="WIP Units" value={fmtInt(wipUnitCount)} />
-                    <MiniStat label="Role Filter" value={wipRole ? roleLabel(wipRole) : "—"} />
-
-                    {makerSupervisorSplit &&
-                    typeof makerSupervisorSplit === "object" &&
-                    Object.keys(makerSupervisorSplit).length ? (
-                      <div className="mt-3 rounded-xl border bg-slate-50 p-3 sm:col-span-4">
-                        <div className="mb-2 text-xs font-semibold text-slate-700">
-                          Maker / Supervisor Split
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          {[
-                            ["maker_pending", "units_with_maker_pending"],
-                            ["supervisor_pending", "units_with_supervisor_pending"],
-                          ].map(([label, key]) => (
-                            <MiniStat
-                              key={key}
-                              label={splitLabel(label)}
-                              value={fmtInt(makerSupervisorSplit?.[key])}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                )}
-
-                <div className="mt-4 rounded-2xl border">
-                  <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
-                    <div className="text-sm font-semibold text-slate-900">
-                      Excel Table Preview
-                    </div>
-                  </div>
-
-                  {wipLoading ? (
-                    <div className="p-4 text-sm text-slate-600">Loading...</div>
-                  ) : !wipRows?.length ? (
-                    <div className="p-4 text-sm text-slate-600">No rows returned.</div>
-                  ) : (
-                    <div className="max-h-[56vh] overflow-auto">
-                      <table className="min-w-max w-full text-sm">
-                        <thead className="sticky top-0 bg-white">
-                          <tr className="border-b">
-                            <th className="whitespace-nowrap px-4 py-2 text-left text-[11px] font-semibold text-slate-600">
-                              Open
-                            </th>
-
-                            {wipColumns.map((k) => {
-                              const colKey = String(k);
-                              const isRed = RED_HIGHLIGHT_COLS.has(colKey);
-                              return (
-                                <th
-                                  key={colKey}
-                                  className={[
-                                    "whitespace-nowrap px-4 py-2 text-left text-[11px] font-semibold",
-                                    isRed ? "bg-red-50 text-red-700" : "text-slate-600",
-                                  ].join(" ")}
-                                >
-                                  {colKey.replace(/_/g, " ")}
-                                </th>
-                              );
-                            })}
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          {wipRows.map((row, idx) => {
-                            const flatId = getFlatIdFromRow(row);
-                            const clickable = Boolean(flatId);
-
-                            return (
-                              <tr
-                                key={idx}
-                                className={[
-                                  "border-b last:border-0",
-                                  clickable ? "cursor-pointer hover:bg-slate-50" : "",
-                                ].join(" ")}
-                                onClick={() => {
-                                  if (clickable) goToFlatReport(row);
-                                }}
-                              >
-                                <td className="whitespace-nowrap px-4 py-2 text-slate-700">
-                                  {clickable ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-medium">
-                                      {openingFlatId === String(flatId) ? (
-                                        "Opening..."
-                                      ) : (
-                                        <>
-                                          <ExternalLink size={14} />
-                                          Open
-                                        </>
-                                      )}
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs text-slate-400">—</span>
-                                  )}
-                                </td>
-
-                                {wipColumns.map((k) => {
-                                  const colKey = String(k);
-                                  const v = row?.[colKey];
-                                  const txt = formatCell(colKey, v, row);
-                                  const isRed = RED_HIGHLIGHT_COLS.has(colKey);
-
-                                  return (
-                                    <td
-                                      key={colKey}
-                                      className={[
-                                        "whitespace-nowrap px-4 py-2",
-                                        isRed ? "bg-red-50 font-semibold text-red-700" : "text-slate-800",
-                                      ].join(" ")}
-                                      title={txt}
-                                    >
-                                      {txt}
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-
-                {/* meta if you want */}
-                {modalAsOf ? (
-                  <div className="mt-3 text-[11px] text-slate-500">
-                    As of: {modalAsOf}
-                  </div>
-                ) : null}
               </div>
             </div>
 
-            <div className="h-6" />
+            <button
+              type="button"
+              onClick={fetchSummary}
+              className="inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-900/5 hover:bg-slate-50"
+            >
+              <RefreshCcw size={16} />
+              Refresh
+            </button>
           </div>
+        </SectionCard>
+
+        {/* Filters */}
+        <SectionCard className="p-4 md:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-extrabold text-slate-900">Filters</div>
+              <div className="text-xs font-semibold text-slate-500 mt-0.5">
+                Choose scope and click <span className="font-black text-slate-700">Apply</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="rounded-xl border bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 ring-1 ring-slate-900/5"
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                onClick={fetchSummary}
+                className="rounded-xl border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:opacity-90 shadow-sm"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+            <MultiSelectDropdown
+              label="Stages"
+              value={stageIds}
+              options={stageOptions}
+              onChange={setStageIds}
+              placeholder="Select stages"
+            />
+
+            <MultiSelectDropdown
+              label="Buildings / Towers"
+              value={buildingIds}
+              options={buildingOptions}
+              onChange={(vals) => {
+                setBuildingIds(vals);
+                setFloorIds([]);
+                setUnitIds([]);
+              }}
+              placeholder="Select towers"
+            />
+
+            <MultiSelectDropdown
+              label="Floors"
+              value={floorIds}
+              options={floorOptions}
+              onChange={(vals) => {
+                setFloorIds(vals);
+                setUnitIds([]);
+              }}
+              placeholder={buildingIds.length ? "Select floors" : "Select tower first"}
+              disabled={!buildingIds.length}
+            />
+
+            <MultiSelectDropdown
+              label="Units"
+              value={unitIds}
+              options={unitOptions}
+              onChange={setUnitIds}
+              placeholder={
+                !buildingIds.length
+                  ? "Select tower first"
+                  : floorIds.length
+                  ? "Select units (filtered by floor)"
+                  : "Select units"
+              }
+              disabled={!buildingIds.length}
+            />
+          </div>
+
+          <div className="mt-4">
+            <FilterLabel>Pending From (optional)</FilterLabel>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <RoleChip code="MAKER" label="Maker" />
+              <RoleChip code="INSPECTOR" label="Inspector" />
+              <RoleChip code="CHECKER" label="Checker" />
+              <RoleChip code="SUPERVISOR" label="Supervisor" />
+            </div>
+          </div>
+        </SectionCard>
+
+        {err ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 ring-1 ring-red-900/5">
+            {err}
+          </div>
+        ) : null}
+
+        {/* KPI header */}
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-extrabold text-slate-900">KPIs</div>
+          <div className="text-xs font-semibold text-slate-500">Scroll horizontally if needed</div>
         </div>
-      ) : null}
+
+        {/* KPI cards */}
+        <div className="rounded-2xl border bg-white p-3 shadow-sm ring-1 ring-slate-900/5">
+          <div className="flex gap-3 overflow-x-auto pb-2 pr-2">
+            {loading
+              ? Array.from({ length: 6 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="min-w-[220px] h-[82px] animate-pulse rounded-2xl border bg-white px-4 py-3 ring-1 ring-slate-900/5"
+                  >
+                    <div className="h-3 w-28 rounded bg-slate-100" />
+                    <div className="mt-3 h-6 w-16 rounded bg-slate-100" />
+                  </div>
+                ))
+              : cards.map((c) => (
+                  <Card key={c.key} title={c.title} value={c.value} Icon={c.Icon} onClick={c.onClick} />
+                ))}
+          </div>
+
+         
+        </div>
+
+        {/* ---------------- WIP MODAL ---------------- */}
+        {wipOpen ? (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45" onMouseDown={() => setWipOpen(false)}>
+            <div className="min-h-full px-4 pb-10 pt-20 md:pt-24">
+              <div
+                className="mx-auto w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-900/10"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="sticky top-0 z-10 border-b bg-white/95 backdrop-blur p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-base font-extrabold text-slate-900">
+                        Work In Progress Breakdown
+                      </div>
+                      <div className="mt-1 text-xs font-semibold text-slate-500">
+                        {modalStageName ? <span>Stage: {modalStageName}</span> : null}
+                        {modalTowerName ? <span> • Tower: {modalTowerName}</span> : null}
+                        {wipRole ? <span> • Role: {roleLabel(wipRole)}</span> : null}
+                        {modalAsOf ? <span> • As of: {modalAsOf}</span> : null}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={refreshWipAll}
+                        className="inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 ring-1 ring-slate-900/5"
+                      >
+                        <RefreshCcw size={14} />
+                        Refresh
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={exportWipExcel}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:opacity-90 shadow-sm"
+                      >
+                        <Download size={14} />
+                        Export Excel
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setWipOpen(false)}
+                        className="rounded-xl border bg-white p-2 text-slate-700 hover:bg-slate-50 ring-1 ring-slate-900/5"
+                        aria-label="Close"
+                        title="Close"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4">
+                  {wipBreakdownErr ? (
+                    <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 ring-1 ring-red-900/5">
+                      {wipBreakdownErr}
+                    </div>
+                  ) : null}
+
+                  {wipErr ? (
+                    <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 ring-1 ring-red-900/5">
+                      {wipErr}
+                    </div>
+                  ) : null}
+
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs font-extrabold text-slate-700">Summary</div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ChipButton active={!wipRole} onClick={() => setWipRole("")} title="Show all roles">
+                        All Roles
+                      </ChipButton>
+
+                      {Object.keys(byPendingFrom || {}).map((k) => (
+                        <ChipButton
+                          key={k}
+                          active={String(wipRole).toUpperCase() === String(k).toUpperCase()}
+                          onClick={() => toggleModalRole(k)}
+                          title="Filter table + breakdown by this role"
+                        >
+                          {roleLabel(k)} • {fmtInt(byPendingFrom[k])}
+                        </ChipButton>
+                      ))}
+                    </div>
+                  </div>
+
+                  {wipBreakdownLoading ? (
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {Array.from({ length: 4 }).map((_, i) => (
+                        <div key={i} className="h-[56px] animate-pulse rounded-xl border bg-white px-3 py-2 ring-1 ring-slate-900/5">
+                          <div className="h-3 w-20 rounded bg-slate-100" />
+                          <div className="mt-2 h-5 w-12 rounded bg-slate-100" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <MiniStat label="WIP Units" value={fmtInt(wipUnitCount)} />
+                      <MiniStat label="Role Filter" value={wipRole ? roleLabel(wipRole) : "—"} />
+
+                      {makerSupervisorSplit &&
+                      typeof makerSupervisorSplit === "object" &&
+                      Object.keys(makerSupervisorSplit).length ? (
+                        <div className="mt-3 rounded-2xl border bg-slate-50 p-3 sm:col-span-4 ring-1 ring-slate-900/5">
+                          <div className="mb-2 text-xs font-extrabold text-slate-700">
+                            Maker / Supervisor Split
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {[
+                              ["maker_pending", "units_with_maker_pending"],
+                              ["supervisor_pending", "units_with_supervisor_pending"],
+                            ].map(([label, key]) => (
+                              <MiniStat
+                                key={key}
+                                label={splitLabel(label)}
+                                value={fmtInt(makerSupervisorSplit?.[key])}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  <div className="mt-4 rounded-3xl border overflow-hidden ring-1 ring-slate-900/5">
+                    <div className="flex items-center justify-between gap-2 border-b px-4 py-3 bg-white">
+                      <div className="text-sm font-extrabold text-slate-900">
+                        Excel Table Preview
+                      </div>
+                      <div className="text-[11px] font-semibold text-slate-500">
+                        Click a row to open Flat Report
+                      </div>
+                    </div>
+
+                    {wipLoading ? (
+                      <div className="p-4 text-sm font-semibold text-slate-600">Loading...</div>
+                    ) : !wipRows?.length ? (
+                      <div className="p-4 text-sm font-semibold text-slate-600">No rows returned.</div>
+                    ) : (
+                      <div className="max-h-[56vh] overflow-auto">
+                        <table className="min-w-max w-full text-sm">
+                          <thead className="sticky top-0 bg-white">
+                            <tr className="border-b">
+                              <th className="whitespace-nowrap px-4 py-2 text-left text-[11px] font-extrabold text-slate-600">
+                                Open
+                              </th>
+
+                              {wipColumns.map((k) => {
+                                const colKey = String(k);
+                                const isRed = RED_HIGHLIGHT_COLS.has(colKey);
+                                return (
+                                  <th
+                                    key={colKey}
+                                    className={[
+                                      "whitespace-nowrap px-4 py-2 text-left text-[11px] font-extrabold",
+                                      isRed ? "bg-red-50 text-red-700" : "text-slate-600",
+                                    ].join(" ")}
+                                  >
+                                    {colKey.replace(/_/g, " ")}
+                                  </th>
+                                );
+                              })}
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {wipRows.map((row, idx) => {
+                              const flatId = getFlatIdFromRow(row);
+                              const clickable = Boolean(flatId);
+
+                              return (
+                                <tr
+                                  key={idx}
+                                  className={[
+                                    "border-b last:border-0",
+                                    idx % 2 === 0 ? "bg-white" : "bg-slate-50/30",
+                                    clickable ? "cursor-pointer hover:bg-slate-50" : "",
+                                  ].join(" ")}
+                                  onClick={() => {
+                                    if (clickable) goToFlatReport(row);
+                                  }}
+                                >
+                                  <td className="whitespace-nowrap px-4 py-2 text-slate-700">
+                                    {clickable ? (
+                                      <span className="inline-flex items-center gap-1 text-xs font-bold">
+                                        {openingFlatId === String(flatId) ? (
+                                          "Opening..."
+                                        ) : (
+                                          <>
+                                            <ExternalLink size={14} />
+                                            Open
+                                          </>
+                                        )}
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-slate-400">—</span>
+                                    )}
+                                  </td>
+
+                                  {wipColumns.map((k) => {
+                                    const colKey = String(k);
+                                    const v = row?.[colKey];
+                                    const txt = formatCell(colKey, v, row);
+                                    const isRed = RED_HIGHLIGHT_COLS.has(colKey);
+
+                                    return (
+                                      <td
+                                        key={colKey}
+                                        className={[
+                                          "whitespace-nowrap px-4 py-2",
+                                          isRed
+                                            ? "bg-red-50 font-extrabold text-red-700"
+                                            : "text-slate-800 font-medium",
+                                        ].join(" ")}
+                                        title={txt}
+                                      >
+                                        {txt}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {modalAsOf ? (
+                    <div className="mt-3 text-[11px] font-semibold text-slate-500">
+                      As of: {modalAsOf}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="h-6" />
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
