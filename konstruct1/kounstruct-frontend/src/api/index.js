@@ -50,6 +50,41 @@ const __postMultipartWithFallback = async (instance, urlList, formData, config =
   throw lastErr;
 };
 
+
+
+
+const __getBlobWithFallback = async (instance, urlList, config = {}) => {
+  let lastErr = null;
+
+  for (const url of urlList) {
+    try {
+      return await instance.get(url, config);
+    } catch (err) {
+      lastErr = err;
+      const status = err?.response?.status;
+
+      // only fallback on 404
+      if (status && status !== 404) throw err;
+
+      // no response = network error
+      if (!err?.response) throw err;
+    }
+  }
+
+  throw lastErr;
+};
+
+
+// export function downloadBlob(blob, filename = "file.pdf") {
+//   const url = window.URL.createObjectURL(blob);
+//   const a = document.createElement("a");
+//   a.href = url;
+//   a.download = filename;
+//   document.body.appendChild(a);
+//   a.click();
+//   a.remove();
+//   window.URL.revokeObjectURL(url);
+// }
 export function downloadBlob(blob, filename = "file.pdf") {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -58,7 +93,9 @@ export function downloadBlob(blob, filename = "file.pdf") {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  window.URL.revokeObjectURL(url);
+
+  // ✅ revoke after a bit (safer)
+  setTimeout(() => window.URL.revokeObjectURL(url), 5000);
 }
 
 export function filenameFromDisposition(disposition) {
@@ -2263,6 +2300,106 @@ export const exportUnitChecklistReportExcel = async (params = {}) => {
 };
 
 
+export const exportFormResponsePdf = async (responseId, { mode = "grid" } = {}) => {
+  const token =
+    localStorage.getItem("ACCESS_TOKEN") ||
+    localStorage.getItem("TOKEN") ||
+    localStorage.getItem("token") ||
+    "";
+
+  const root = __getApiRoot();
+
+  // ✅ try multiple possible routes (because your axios baseURL can be /users or /api)
+  const urls = [
+    `${root}/users/forms/responses/${responseId}/export-pdf/`,
+    `${root}/api/forms/responses/${responseId}/export-pdf/`,
+    `/forms/responses/${responseId}/export-pdf/`,
+  ];
+
+  const res = await __getBlobWithFallback(axiosInstance, urls, {
+    params: { mode },
+    responseType: "blob",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+
+  // ✅ If backend returns JSON error inside blob
+  const contentType = res.headers?.["content-type"] || "";
+  if (contentType.includes("application/json")) {
+    const text = await res.data.text();
+    let msg = "PDF export failed";
+    try {
+      msg = JSON.parse(text)?.detail || JSON.parse(text)?.message || msg;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  const dispo = res.headers?.["content-disposition"];
+  const filename =
+    filenameFromDisposition(dispo) || `response_${responseId}.pdf`;
+
+  downloadBlob(res.data, filename);
+  return true;
+};
+
+
+// ✅ FORMS: Export Response PDF (blob) with route fallbacks
+// export const exportFormResponsePdf = async (responseId, params = {}) => {
+//   const root = __getApiRoot();
+//   const token = __pickToken();
+
+//   // ✅ first try RELATIVE (because axiosInstance baseURL likely already /users)
+//   const urls = [
+//     `/forms/responses/${responseId}/export-pdf/`,
+//     `/forms/responses/${responseId}/export_pdf/`,     // just in case backend uses underscore
+//     `${root}/users/forms/responses/${responseId}/export-pdf/`,
+//     `${root}/api/forms/responses/${responseId}/export-pdf/`,
+//   ];
+
+//   let lastErr = null;
+
+//   for (const url of urls) {
+//     try {
+//       const res = await axiosInstance.get(url, {
+//         params,                 // { mode: "grid" } etc
+//         responseType: "blob",   // ✅ MUST
+//         headers: {
+//           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+//           Accept: "application/pdf",
+//         },
+//       });
+
+//       // ✅ If backend returns JSON error inside blob
+//       const contentType = res.headers?.["content-type"] || "";
+//       if (contentType.includes("application/json")) {
+//         const text = await res.data.text();
+//         let msg = "Export failed";
+//         try {
+//           const j = JSON.parse(text);
+//           msg = j?.detail || j?.message || msg;
+//         } catch {}
+//         throw new Error(msg);
+//       }
+
+//       const dispo = res.headers?.["content-disposition"];
+//       const filename =
+//         filenameFromDisposition(dispo) || `form_response_${responseId}.pdf`;
+
+//       downloadBlob(res.data, filename);
+//       return true;
+//     } catch (err) {
+//       lastErr = err;
+
+//       const status = err?.response?.status;
+//       // fallback only if route not found
+//       if (status && status !== 404) throw err;
+//       if (!err?.response) throw err; // network error -> stop
+//     }
+//   }
+
+//   throw lastErr;
+// };
+
+
 // // --- ADD THIS IN api.js ---
 
 // import axios from "axios";
@@ -2329,3 +2466,5 @@ export const exportUnitChecklistReportExcel = async (params = {}) => {
 //   downloadBlob(res.data, name);
 //   return true;
 // };
+
+

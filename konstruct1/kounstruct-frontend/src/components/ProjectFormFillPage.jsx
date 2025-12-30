@@ -1,17 +1,16 @@
-
 // // src/components/ProjectFormFillPage.jsx
-// import React, { useEffect, useMemo, useState } from "react";
+// // import React, { useEffect, useMemo, useState ,} from "react";
+// import React, { useEffect, useMemo, useRef, useState } from "react";
 // import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 // import toast from "react-hot-toast";
 // import {
 //   createFormResponse,
 //   getAssignedFormsForProject,
-//   getUsersByProject,        // 🔥 NEW
-//   forwardFormResponse, 
+//   getUsersByProject, // 🔥 NEW
+//   forwardFormResponse,
 //   listFormTasks,
-//   getFormResponse,         // ✅ add
-//   updateFormResponse, 
-//        // 🔥 NEW
+//   getFormResponse, // ✅ add
+//   updateFormResponse,
 // } from "../api";
 
 // // ✅ Common regex to detect file-like labels (logo, signature, photograph etc.)
@@ -51,6 +50,8 @@
 //       required,
 //     };
 //   }
+
+  
 
 //   // 2) flat block acting as a field
 //   const key =
@@ -305,6 +306,7 @@
 //       });
 //     });
 //   };
+  
 
 //   if (Array.isArray(schema.sections)) {
 //     visitSectionsArray(schema.sections);
@@ -390,26 +392,26 @@
 //    MAIN COMPONENT
 // ================================================================== */
 // const ProjectFormFillPage = () => {
+//     const printRef = useRef(null);
+
 //   const [searchParams] = useSearchParams();
 //   const location = useLocation();
 //   const navigate = useNavigate();
 
 //   const qpProjectId = searchParams.get("project_id") || "";
-// const qpAssignmentId =
-//   searchParams.get("assignment_id") ||
-//   searchParams.get("form_assignment_id") ||
-//   searchParams.get("assignment") ||
-//   searchParams.get("id") ||
-//   "";
-
+//   const qpAssignmentId =
+//     searchParams.get("assignment_id") ||
+//     searchParams.get("form_assignment_id") ||
+//     searchParams.get("assignment") ||
+//     searchParams.get("id") ||
+//     "";
 
 //   const qpResponseId = searchParams.get("response_id") || "";
-// const [responseId, setResponseId] = useState(
-//   qpResponseId ? Number(qpResponseId) : null
-// );
-// const [responsePayload, setResponsePayload] = useState(null);
-// const [responseLoading, setResponseLoading] = useState(Boolean(qpResponseId));
-
+//   const [responseId, setResponseId] = useState(
+//     qpResponseId ? Number(qpResponseId) : null
+//   );
+//   const [responsePayload, setResponsePayload] = useState(null);
+//   const [responseLoading, setResponseLoading] = useState(Boolean(qpResponseId));
 
 //   const [projectId] = useState(qpProjectId);
 //   const [assignment, setAssignment] = useState(
@@ -433,6 +435,43 @@
 //   const [forwardToUserId, setForwardToUserId] = useState("");
 //   const [forwardDecision, setForwardDecision] = useState("APPROVED"); // ACCEPT by default
 
+//   // ✅ Export PDF (Print)
+// //   const handleExportPdf = () => {
+// //     // keep it simple: no extra popups/toasts
+// //     // close image panel for clean print (optional)
+// //     setActiveImageKey(null);
+// //     window.print();
+// //   };
+
+// const handleExportPdf = () => {
+//   setActiveImageKey(null);
+
+//   // allow DOM to settle (close panels etc.)
+//   setTimeout(() => {
+//     const el = printRef.current;
+//     if (!el) {
+//       window.print();
+//       return;
+//     }
+
+//     // A4 LANDSCAPE inner width (match @page below)
+//     const mmToPx = (mm) => (mm / 25.4) * 96;
+//     const pageWidthMm = 297;     // A4 landscape width
+//     const marginMm = 8;          // must match @page margin
+//     const availablePx = mmToPx(pageWidthMm - marginMm * 2);
+
+//     const srcWidth = el.scrollWidth || el.getBoundingClientRect().width;
+//     const scale = Math.min(1, availablePx / srcWidth);
+
+//     // store css vars for print
+//     document.documentElement.style.setProperty("--pf-print-width", `${srcWidth}px`);
+//     document.documentElement.style.setProperty("--pf-print-scale", `${scale}`);
+
+//     window.print();
+//   }, 50);
+// };
+
+
 //   useEffect(() => {
 //     console.log("📦 [Fill] assignment object:", assignment);
 //     console.log(
@@ -440,115 +479,85 @@
 //       assignment?.template_version_detail
 //     );
 //   }, [assignment]);
-// useEffect(() => {
-//   if (assignment || !projectId || !qpAssignmentId) return;
 
-//   const normalizeList = (res) => {
-//     const d = res?.data;
-//     if (Array.isArray(d)) return d;
-//     if (Array.isArray(d?.results)) return d.results;
-//     return [];
-//   };
-  
+//   useEffect(() => {
+//     if (assignment || !projectId || !qpAssignmentId) return;
 
+//     const normalizeList = (res) => {
+//       const d = res?.data;
+//       if (Array.isArray(d)) return d;
+//       if (Array.isArray(d?.results)) return d.results;
+//       return [];
+//     };
 
+//     const load = async () => {
+//       setLoading(true);
+//       try {
+//         // 1) Try assignments (admin scope)
+//         const res = await getAssignedFormsForProject(projectId);
+//         const list = normalizeList(res);
 
-//   const load = async () => {
-//     setLoading(true);
-//     try {
-//       // 1) Try assignments (admin scope)
-//       const res = await getAssignedFormsForProject(projectId);
-//       const list = normalizeList(res);
+//         const found = list.find((a) => String(a.id) === String(qpAssignmentId));
+//         if (found) {
+//           setAssignment(found);
+//           return;
+//         }
 
-//       const found = list.find((a) => String(a.id) === String(qpAssignmentId));
-//       if (found) {
-//         setAssignment(found);
-//         return;
+//         // 2) ✅ Fallback: tasks (user scope) -> redirect to task fill page
+//         const tRes = await listFormTasks({ project_id: Number(projectId) });
+//         const tasks = normalizeList(tRes);
+
+//         const task =
+//           tasks.find((t) => String(t.assignment_id) === String(qpAssignmentId)) ||
+//           tasks.find((t) => String(t.assignment) === String(qpAssignmentId)) ||
+//           null;
+
+//         if (task?.id) {
+//           navigate(`/forms/tasks/${task.id}`);
+//           return;
+//         }
+
+//         console.log("❌ Assigned forms list:", list);
+//         console.log("❌ Tasks list:", tasks);
+
+//         toast.error(
+//           `Form assignment not found in assignments or tasks. project_id=${projectId}, assignment_id=${qpAssignmentId}`
+//         );
+//         navigate("/project-forms");
+//       } catch (err) {
+//         console.error("Failed to load assignment for fill page", err);
+//         toast.error("Failed to load form details");
+//         navigate("/project-forms");
+//       } finally {
+//         setLoading(false);
 //       }
+//     };
 
-//       // 2) ✅ Fallback: tasks (user scope) -> redirect to task fill page
-//       const tRes = await listFormTasks({ project_id: Number(projectId) });
-//       const tasks = normalizeList(tRes);
+//     load();
+//   }, [assignment, projectId, qpAssignmentId, navigate]);
 
-//       const task =
-//         tasks.find((t) => String(t.assignment_id) === String(qpAssignmentId)) ||
-//         tasks.find((t) => String(t.assignment) === String(qpAssignmentId)) ||
-//         null;
+//   const fileToDataUrl = (file) =>
+//     new Promise((resolve, reject) => {
+//       const r = new FileReader();
+//       r.onload = () => resolve(r.result);
+//       r.onerror = reject;
+//       r.readAsDataURL(file);
+//     });
 
-//       if (task?.id) {
-//         // receiver/assignee should edit via tasks page
-//         navigate(`/forms/tasks/${task.id}`);
-//         return;
+//   const normalizeAnswersForSubmit = async (values) => {
+//     const out = { ...(values || {}) };
+
+//     for (const [k, v] of Object.entries(out)) {
+//       if (v instanceof File) {
+//         // safety: 1.5MB cap (change if needed)
+//         if (v.size > 1.5 * 1024 * 1024) {
+//           throw new Error(`File too large for ${k}. Please upload smaller image.`);
+//         }
+//         out[k] = await fileToDataUrl(v); // ✅ base64
 //       }
-
-//       console.log("❌ Assigned forms list:", list);
-//       console.log("❌ Tasks list:", tasks);
-
-//       toast.error(
-//         `Form assignment not found in assignments or tasks. project_id=${projectId}, assignment_id=${qpAssignmentId}`
-//       );
-//       navigate("/project-forms");
-//     } catch (err) {
-//       console.error("Failed to load assignment for fill page", err);
-//       toast.error("Failed to load form details");
-//       navigate("/project-forms");
-//     } finally {
-//       setLoading(false);
 //     }
+//     return out;
 //   };
-
-//   load();
-// }, [assignment, projectId, qpAssignmentId, navigate]);
-// const normalizeAnswersForSubmit = async (values) => {
-//   const out = { ...(values || {}) };
-
-//   for (const [k, v] of Object.entries(out)) {
-//     if (v instanceof File) {
-//       // safety: 1.5MB cap (change if needed)
-//       if (v.size > 1.5 * 1024 * 1024) {
-//         throw new Error(`File too large for ${k}. Please upload smaller image.`);
-//       }
-//       out[k] = await fileToDataUrl(v); // ✅ base64
-//     }
-//   }
-//   return out;
-// };
-// const fileToDataUrl = (file) =>
-//   new Promise((resolve, reject) => {
-//     const r = new FileReader();
-//     r.onload = () => resolve(r.result);
-//     r.onerror = reject;
-//     r.readAsDataURL(file);
-//   });
-
-//   // load assignment
-// //   useEffect(() => {
-// //     if (assignment || !projectId || !qpAssignmentId) return;
-
-// //     const load = async () => {
-// //       setLoading(true);
-// //       try {
-// //         const res = await getAssignedFormsForProject(projectId, {
-// //           assignment_id: qpAssignmentId,
-// //         });
-// //         const data = res.data || [];
-// //         if (!data.length) {
-// //           toast.error("Form assignment not found for this project.");
-// //           navigate("/project-forms");
-// //           return;
-// //         }
-// //         setAssignment(data[0]);
-// //       } catch (err) {
-// //         console.error("Failed to load assignment for fill page", err);
-// //         toast.error("Failed to load form details");
-// //         navigate("/project-forms");
-// //       } finally {
-// //         setLoading(false);
-// //       }
-// //     };
-
-// //     load();
-// //   }, [assignment, projectId, qpAssignmentId, navigate]);
 
 //   // 🔥 NEW: load project users once projectId available
 //   useEffect(() => {
@@ -588,84 +597,71 @@
 //     console.log("📄 [Fill] raw schema:", schema);
 //     console.log("📄 [Fill] allFields:", allFields);
 //   }, [schema, allFields]);
-// const prefillAnswers = useMemo(() => {
-//   const a = responsePayload?.answers || responsePayload?.data || {};
-//   // backend me file fields {} aa rahe hain, use null treat karo
-//   const cleaned = {};
-//   Object.entries(a || {}).forEach(([k, v]) => {
-//     if (v && typeof v === "object" && !(v instanceof File) && !Array.isArray(v)) {
-//       cleaned[k] = Object.keys(v).length ? v : null; // {} -> null
-//     } else {
-//       cleaned[k] = v;
-//     }
-//   });
-//   return cleaned;
-// }, [responsePayload]);
+
+//   const prefillAnswers = useMemo(() => {
+//     const a = responsePayload?.answers || responsePayload?.data || {};
+//     // backend me file fields {} aa rahe hain, use null treat karo
+//     const cleaned = {};
+//     Object.entries(a || {}).forEach(([k, v]) => {
+//       if (v && typeof v === "object" && !(v instanceof File) && !Array.isArray(v)) {
+//         cleaned[k] = Object.keys(v).length ? v : null; // {} -> null
+//       } else {
+//         cleaned[k] = v;
+//       }
+//     });
+//     return cleaned;
+//   }, [responsePayload]);
 // useEffect(() => {
-//   if (!responseId) return;
-
-//   let mounted = true;
-//   (async () => {
-//     try {
-//       setResponseLoading(true);
-//       const res = await getFormResponse(responseId);
-//       const data = res?.data ?? res;
-//       if (!mounted) return;
-//       setResponsePayload(data);
-//     } catch (e) {
-//       console.error(e);
-//       toast.error(e?.response?.data?.detail || "Failed to load response.");
-//     } finally {
-//       if (mounted) setResponseLoading(false);
-//     }
-//   })();
-
-//   return () => {
-//     mounted = false;
+//   const cleanup = () => {
+//     document.documentElement.style.removeProperty("--pf-print-width");
+//     document.documentElement.style.removeProperty("--pf-print-scale");
 //   };
-// }, [responseId]);
+//   window.addEventListener("afterprint", cleanup);
+//   return () => window.removeEventListener("afterprint", cleanup);
+// }, []);
 
+//   useEffect(() => {
+//     if (!responseId) return;
 
-// useEffect(() => {
-//   if (!assignment) return;
+//     let mounted = true;
+//     (async () => {
+//       try {
+//         setResponseLoading(true);
+//         const res = await getFormResponse(responseId);
+//         const data = res?.data ?? res;
+//         if (!mounted) return;
+//         setResponsePayload(data);
+//       } catch (e) {
+//         console.error(e);
+//         toast.error(e?.response?.data?.detail || "Failed to load response.");
+//       } finally {
+//         if (mounted) setResponseLoading(false);
+//       }
+//     })();
 
-//   const initial = {};
-//   allFields.forEach((field) => {
-//     const key = field.key;
-//     if (!key) return;
+//     return () => {
+//       mounted = false;
+//     };
+//   }, [responseId]);
 
-//     const cfg = field.config || {};
-//     if (field.default !== undefined && field.default !== null) initial[key] = field.default;
-//     else if (cfg.default !== undefined && cfg.default !== null) initial[key] = cfg.default;
-//     else initial[key] = field.type === "FILE" ? null : "";
-//   });
+//   useEffect(() => {
+//     if (!assignment) return;
 
-//   // ✅ IMPORTANT: prefillAnswers merge
-//   setFormValues({ ...initial, ...prefillAnswers });
-//   setErrors({});
-// }, [assignment, allFields, prefillAnswers]);
+//     const initial = {};
+//     allFields.forEach((field) => {
+//       const key = field.key;
+//       if (!key) return;
 
+//       const cfg = field.config || {};
+//       if (field.default !== undefined && field.default !== null) initial[key] = field.default;
+//       else if (cfg.default !== undefined && cfg.default !== null) initial[key] = cfg.default;
+//       else initial[key] = field.type === "FILE" ? null : "";
+//     });
 
-// //   useEffect(() => {
-// //     if (!assignment) return;
-
-// //     const initial = {};
-// //     allFields.forEach((field) => {
-// //       const key = field.key;
-// //       if (!key) return;
-
-// //       const cfg = field.config || {};
-// //       if (field.default !== undefined && field.default !== null) {
-// //         initial[key] = field.default;
-// //       } else if (cfg.default !== undefined && cfg.default !== null) {
-// //         initial[key] = cfg.default;
-// //       } else {
-// //         initial[key] = field.type === "FILE" ? null : "";
-// //       }
-// //     });
-// //     setFormValues(initial);
-// //     setErrors({});
-// //   }, [assignment, allFields]);
+//     // ✅ IMPORTANT: prefillAnswers merge
+//     setFormValues({ ...initial, ...prefillAnswers });
+//     setErrors({});
+//   }, [assignment, allFields, prefillAnswers]);
 
 //   const getFieldLabel = (field) =>
 //     field.label || field.title || field.key || "Field";
@@ -698,151 +694,76 @@
 //     return Object.keys(newErrors).length === 0;
 //   };
 
-// //   const handleSubmit = async (status = "SUBMITTED") => {
-// //     if (!assignment || !projectId) return;
+//   const handleSubmit = async (status = "SUBMITTED") => {
+//     if (!assignment || !projectId) return;
 
-// //     if (status !== "DRAFT" && !validate()) {
-// //       toast.error("Please fill all required fields.");
-// //       return;
-// //     }
-
-// //     const tv = assignment.template_version_detail || {};
-// //     const templateVersionId = tv.id;
-
-// //     if (!templateVersionId) {
-// //       toast.error("Invalid form version.");
-// //       return;
-// //     }
-
-// //     const payload = {
-// //       template_version: templateVersionId,
-// //       assignment: assignment.id,
-// //       project_id: Number(projectId),
-// //       client_id: assignment.client_id || null,
-// //       related_object_type: "",
-// //       related_object_id: "",
-// //       status,
-// //       answers: formValues,
-// //     };
-
-// //     setSubmitting(true);
-// //     try {
-// //       // 1️⃣ response create karo
-// //       const res = await createFormResponse(payload);
-// //       const created = res.data || {};
-// //       const responseId = created.id;
-
-// //       // 2️⃣ agar forward user select hai, to forward bhi karo
-// //       if (responseId && forwardToUserId) {
-// //         try {
-// //           await forwardFormResponse(responseId, {
-// //             to_user_id: Number(forwardToUserId),
-// //             decision: forwardDecision, // "APPROVED" | "REJECTED"
-// //           });
-
-// //           toast.success(
-// //             status === "DRAFT"
-// //               ? "Form saved as draft and forwarded."
-// //               : "Form submitted and forwarded."
-// //           );
-// //         } catch (fErr) {
-// //           console.error("Forwarding failed", fErr);
-// //           toast.error(
-// //             status === "DRAFT"
-// //               ? "Form saved as draft, but forwarding failed."
-// //               : "Form submitted, but forwarding failed."
-// //           );
-// //         }
-// //       } else {
-// //         // normal success
-// //         toast.success(
-// //           status === "DRAFT" ? "Form saved as draft." : "Form submitted."
-// //         );
-// //       }
-
-// //       navigate(`/project-forms?project_id=${projectId}`);
-// //     } catch (err) {
-// //       console.error("Failed to submit form response", err);
-// //       const data = err.response?.data;
-// //       if (data && typeof data === "object") {
-// //         toast.error("Failed to submit: " + (data.detail || "See console"));
-// //       } else {
-// //         toast.error("Failed to submit form.");
-// //       }
-// //     } finally {
-// //       setSubmitting(false);
-// //     }
-// //   };
-
-// const handleSubmit = async (status = "SUBMITTED") => {
-//   if (!assignment || !projectId) return;
-
-//   if (status !== "DRAFT" && !validate()) {
-//     toast.error("Please fill all required fields.");
-//     return;
-//   }
-
-//   const tv = assignment.template_version_detail || {};
-//   const templateVersionId = tv.id;
-//   if (!templateVersionId) {
-//     toast.error("Invalid form version.");
-//     return;
-//   }
-
-//   setSubmitting(true);
-//   try {
-//     // ✅ convert File -> base64 so it actually saves
-//     const finalAnswers = await normalizeAnswersForSubmit(formValues);
-
-//     let savedResponseId = responseId;
-
-//     if (savedResponseId) {
-//       // ✅ EDIT MODE (prefilled response)
-//       await updateFormResponse(savedResponseId, {
-//         status,
-//         answers: finalAnswers,
-//         data: finalAnswers,      // safe
-//       });
-//     } else {
-//       // ✅ CREATE MODE
-//       const payload = {
-//         template_version: templateVersionId,
-//         assignment: assignment.id,
-//         project_id: Number(projectId),
-//         client_id: assignment.client_id || null,
-//         related_object_type: "",
-//         related_object_id: "",
-//         status,
-//         answers: finalAnswers,
-//         data: finalAnswers,
-//       };
-
-//       const res = await createFormResponse(payload);
-//       const created = res.data || {};
-//       savedResponseId = created.id;
-//       setResponseId(savedResponseId);
+//     if (status !== "DRAFT" && !validate()) {
+//       toast.error("Please fill all required fields.");
+//       return;
 //     }
 
-//     // ✅ forward on same response id
-//     if (savedResponseId && forwardToUserId) {
-//       await forwardFormResponse(savedResponseId, {
-//         to_user_id: Number(forwardToUserId),
-//         decision: forwardDecision,
-//       });
-//       toast.success(status === "DRAFT" ? "Saved (draft) and forwarded." : "Submitted and forwarded.");
-//     } else {
-//       toast.success(status === "DRAFT" ? "Saved as draft." : "Submitted.");
+//     const tv = assignment.template_version_detail || {};
+//     const templateVersionId = tv.id;
+//     if (!templateVersionId) {
+//       toast.error("Invalid form version.");
+//       return;
 //     }
 
-//     navigate(`/project-forms?project_id=${projectId}`);
-//   } catch (err) {
-//     console.error(err);
-//     toast.error(err?.response?.data?.detail || err?.message || "Failed to submit.");
-//   } finally {
-//     setSubmitting(false);
-//   }
-// };
+//     setSubmitting(true);
+//     try {
+//       // ✅ convert File -> base64 so it actually saves
+//       const finalAnswers = await normalizeAnswersForSubmit(formValues);
 
+//       let savedResponseId = responseId;
+
+//       if (savedResponseId) {
+//         // ✅ EDIT MODE (prefilled response)
+//         await updateFormResponse(savedResponseId, {
+//           status,
+//           answers: finalAnswers,
+//           data: finalAnswers, // safe
+//         });
+//       } else {
+//         // ✅ CREATE MODE
+//         const payload = {
+//           template_version: templateVersionId,
+//           assignment: assignment.id,
+//           project_id: Number(projectId),
+//           client_id: assignment.client_id || null,
+//           related_object_type: "",
+//           related_object_id: "",
+//           status,
+//           answers: finalAnswers,
+//           data: finalAnswers,
+//         };
+
+//         const res = await createFormResponse(payload);
+//         const created = res.data || {};
+//         savedResponseId = created.id;
+//         setResponseId(savedResponseId);
+//       }
+
+//       // ✅ forward on same response id
+//       if (savedResponseId && forwardToUserId) {
+//         await forwardFormResponse(savedResponseId, {
+//           to_user_id: Number(forwardToUserId),
+//           decision: forwardDecision,
+//         });
+//         toast.success(
+//           status === "DRAFT" ? "Saved (draft) and forwarded." : "Submitted and forwarded."
+//         );
+//       } else {
+//         toast.success(status === "DRAFT" ? "Saved as draft." : "Submitted.");
+//       }
+
+//       navigate(`/project-forms?project_id=${projectId}`);
+//     } catch (err) {
+//       console.error(err);
+//       toast.error(err?.response?.data?.detail || err?.message || "Failed to submit.");
+//     } finally {
+//       setSubmitting(false);
+//     }
+//   };
 
 //   // 🔧 FILE + normal fields (unchanged)
 //   const renderField = (field, opts = {}) => {
@@ -926,7 +847,7 @@
 //               <button
 //                 type="button"
 //                 onClick={clearImage}
-//                 className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] shadow"
+//                 className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] shadow no-print"
 //                 title="Remove image"
 //               >
 //                 ×
@@ -948,15 +869,16 @@
 //                   }
 //                 }}
 //               />
-//               <div className="text-[9px] text-gray-400 mt-0.5">
+//               <div className="text-[9px] text-gray-400 mt-0.5 no-print">
 //                 Click image to adjust size above
 //               </div>
 //             </div>
 //           )}
 
+//           {/* hide file input in PDF print */}
 //           <input
 //             type="file"
-//             className={inputBase}
+//             className={inputBase + " no-print"}
 //             onChange={(e) => {
 //               const file = e.target.files && e.target.files[0];
 //               handleChange(key, file || null);
@@ -973,7 +895,7 @@
 //           />
 
 //           {value && value.name && value instanceof File && (
-//             <div className="mt-1 text-[10px] text-gray-600">
+//             <div className="mt-1 text-[10px] text-gray-600 no-print">
 //               Selected: {value.name}
 //             </div>
 //           )}
@@ -1120,7 +1042,7 @@
 //     const label = field ? getFieldLabel(field) : activeImageKey;
 
 //     return (
-//       <div className="sticky top-0 z-40 mb-3 bg-white border border-purple-200 rounded-md shadow-sm p-2">
+//       <div className="sticky top-0 z-40 mb-3 bg-white border border-purple-200 rounded-md shadow-sm p-2 no-print">
 //         <div className="flex items-center justify-between gap-2 mb-1">
 //           <div className="text-[11px]">
 //             <span className="font-semibold">Adjust image size</span>{" "}
@@ -1215,7 +1137,7 @@
 //         return (
 //           <div
 //             key={sec.key || sec.id || sIdx}
-//             className="border rounded-md bg-white mb-4 overflow-x-auto"
+//   className="pf-section border rounded-md bg-white mb-4 overflow-x-auto"
 //           >
 //             {sec.title && (
 //               <div className="px-3 py-2 border-b">
@@ -1447,7 +1369,7 @@
 //                           return (
 //                             <div
 //                               key={`${rIdx}-${cIdx}`}
-//                               className="border border-gray-200 p-1 align-top"
+//                               className="pf-cell border border-gray-200 p-1 align-top"
 //                               style={{
 //                                 gridColumnStart: startCol,
 //                                 gridColumnEnd: startCol + colSpan,
@@ -1673,34 +1595,119 @@
 //   const formCode = tpl.code;
 
 //   return (
-//     <div className="p-4 space-y-4">
+//     <div id="pf-page-root" className="p-4 space-y-4">
+//       {/* ✅ Print CSS for PDF export */}
+//       {/* <style>{`
+//         @page { size: A4; margin: 12mm; }
+//         @media print {
+//           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+//           .no-print { display: none !important; }
+//           .print-wrap { width: 100% !important; margin: 0 auto !important; }
+//           .overflow-x-auto { overflow: visible !important; }
+//           input, textarea, select { color: #000 !important; }
+//           button { display: none !important; }
+//         }
+//       `}</style> */}
+//       <style>{`
+//   @page { size: A4 landscape; margin: 8mm; }
+
+//   @media print {
+//     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+//     /* ✅ HIDE global app header/nav/sidebar/footer (outside this page) */
+// header, nav, footer, aside { display: none !important; }
+
+// /* common layout classes (add more if your project uses them) */
+// .navbar, .topbar, .sidebar, .app-header, .layout-header, .layout-nav {
+//   display: none !important;
+// }
+
+// /* ✅ remove extra page padding/min-height that can push content */
+// html, body { margin: 0 !important; padding: 0 !important; height: auto !important; }
+// #root { min-height: 0 !important; height: auto !important; }
+
+
+//     /* ✅ hide all UI except print root (NO visibility hack) */
+//     #pf-page-root > :not(#pf-print-root) { display: none !important; }
+
+//     /* remove extra padding/margins in print */
+//     #pf-page-root { padding: 0 !important; margin: 0 !important; }
+
+//     /* ✅ print root: NOT fixed (so it won't repeat) */
+//     #pf-print-root {
+//       display: block !important;
+//       position: static !important;
+//       width: var(--pf-print-width, 100%) !important;
+
+//       /* ✅ Chrome-friendly scaling (zoom affects layout so no extra pages) */
+//       zoom: var(--pf-print-scale, 1);
+//     }
+
+//     #pf-print-root .overflow-x-auto { overflow: visible !important; }
+
+//     #pf-print-root .pf-cell {
+//       overflow: hidden !important;
+//       padding: 2px !important;
+//     }
+
+//     #pf-print-root input,
+//     #pf-print-root select {
+//       font-size: 10px !important;
+//       line-height: 1.1 !important;
+//       height: 16px !important;
+//       padding: 0 2px !important;
+//       margin: 0 !important;
+//     }
+
+//     #pf-print-root textarea {
+//       font-size: 10px !important;
+//       line-height: 1.1 !important;
+//       min-height: 36px !important;
+//       padding: 2px !important;
+//       margin: 0 !important;
+//     }
+
+//     .no-print { display: none !important; }
+//   }
+// `}</style>
+
+
 //       {/* 🔝 Global logo resize panel */}
 //       {renderImageSizePanel()}
 
 //       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
 //         <div>
 //           <h1 className="text-lg font-semibold">Fill Form: {formTitle}</h1>
-//           <p className="text-xs text-gray-500">
-//             Project #{projectId}
-//             {formCode ? ` • Code: ${formCode}` : ""}
-//           </p>
+          
 //         </div>
-//         <button
-//           onClick={() => navigate(-1)}
-//           className="text-xs text-blue-600 underline"
-//         >
-//           ← Back to project forms
-//         </button>
+
+//         <div className="flex items-center gap-3 no-print">
+//           <button
+//             type="button"
+//             onClick={handleExportPdf}
+//             className="px-3 py-1.5 text-xs border rounded bg-white hover:bg-gray-50"
+//           >
+//             Export PDF
+//           </button>
+
+//           <button
+//             onClick={() => navigate(-1)}
+//             className="text-xs text-blue-600 underline"
+//           >
+//             ← Back to project forms
+//           </button>
+//         </div>
 //       </div>
 
 //       {loading || !assignment ? (
 //         <div className="text-sm text-gray-500">Loading form...</div>
 //       ) : (
 //         <>
-//           {renderBody()}
+//           <div id="pf-print-root" ref={printRef}>
+//   {renderBody()}
+// </div>
 
 //           {/* 🔥 Forward section (optional) */}
-//           <div className="mt-4 border-t pt-3">
+//           <div className="mt-4 border-t pt-3 no-print">
 //             <h2 className="text-sm font-semibold mb-2">
 //               Forward (optional)
 //             </h2>
@@ -1769,7 +1776,7 @@
 //             </div>
 //           </div>
 
-//           <div className="flex justify-end gap-2 mt-4">
+//           <div className="flex justify-end gap-2 mt-4 no-print">
 //             <button
 //               type="button"
 //               disabled={submitting}
@@ -1794,19 +1801,21 @@
 // };
 
 // export default ProjectFormFillPage;
+
+
 // src/components/ProjectFormFillPage.jsx
-// import React, { useEffect, useMemo, useState ,} from "react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   createFormResponse,
   getAssignedFormsForProject,
-  getUsersByProject, // 🔥 NEW
+  getUsersByProject,
   forwardFormResponse,
   listFormTasks,
-  getFormResponse, // ✅ add
+  getFormResponse,
   updateFormResponse,
+  
 } from "../api";
 
 // ✅ Common regex to detect file-like labels (logo, signature, photograph etc.)
@@ -1815,18 +1824,14 @@ const LABEL_FILE_REGEX = /logo|signature|stamp|photo|photograph|image/i;
 /* ------------------------------------------------------------------
    Helper: infer field from a block (very tolerant)
 ------------------------------------------------------------------ */
+
 function extractFieldFromBlock(block) {
   if (!block || typeof block !== "object") return null;
 
   // 1) nested field object
   if (block.field && block.field.key) {
     const f = block.field;
-    const rawType = (
-      f.type ||
-      f.field_type ||
-      block.block_type ||
-      "TEXT"
-    ).toUpperCase();
+    const rawType = (f.type || f.field_type || block.block_type || "TEXT").toUpperCase();
     const label = f.label || f.title || f.key;
     const required = !!(f.required || f.is_required);
 
@@ -1847,7 +1852,6 @@ function extractFieldFromBlock(block) {
     };
   }
 
-  
 
   // 2) flat block acting as a field
   const key =
@@ -1857,23 +1861,16 @@ function extractFieldFromBlock(block) {
     (block.meta && block.meta.key) ||
     null;
 
+
   if (!key) return null;
 
-  const rawType = (
-    block.field_type ||
-    block.input_type ||
-    block.block_type ||
-    "TEXT"
-  ).toUpperCase();
+  const rawType = (block.field_type || block.input_type || block.block_type || "TEXT").toUpperCase();
 
-  const label =
-    block.field_label ||
-    block.label ||
-    block.text ||
-    key;
+  const label = block.field_label || block.label || block.text || key;
 
   const config = block.config || block.field_config || {};
   const required = !!(block.required || block.is_required);
+  
 
   let type = rawType || "TEXT";
   if (type === "TEXT_STATIC" || type === "LABEL") type = "TEXT";
@@ -1913,6 +1910,7 @@ function collectFieldsFromSchema(schema) {
       col._autoField = field;
     }
   };
+
 
   const visitSectionsArray = (sections = []) => {
     sections.forEach((sec) => {
@@ -1975,7 +1973,7 @@ function collectFieldsFromSchema(schema) {
                 key,
                 label: "Image",
                 type: "FILE",
-                config: { hideLabel: true }, // label hide – sirf image dikhe
+                config: { hideLabel: true },
                 required: false,
               };
 
@@ -1989,10 +1987,7 @@ function collectFieldsFromSchema(schema) {
             const hasColFieldsAny = colFields.length > 0;
             const hasTextBlock = blocks.some((b) => {
               const bt = (b.block_type || b.blockType || "").toUpperCase();
-              return (
-                (bt === "TEXT_STATIC" || bt === "TEXT") &&
-                (b.text || b.label)
-              );
+              return (bt === "TEXT_STATIC" || bt === "TEXT") && (b.text || b.label);
             });
             const hasImageBlock = blocks.some((b) => {
               const bt = (b.block_type || b.blockType || "").toUpperCase();
@@ -2000,11 +1995,7 @@ function collectFieldsFromSchema(schema) {
             });
             const hasFieldBlock = blocks.some((b) => !!extractFieldFromBlock(b));
 
-            const isAutoEmpty =
-              !hasFieldBlock &&
-              !hasColFieldsAny &&
-              !hasTextBlock &&
-              !hasImageBlock;
+            const isAutoEmpty = !hasFieldBlock && !hasColFieldsAny && !hasTextBlock && !hasImageBlock;
 
             if (isAutoEmpty) {
               let createdFromLeft = false;
@@ -2015,10 +2006,7 @@ function collectFieldsFromSchema(schema) {
                 const prevBlocks = (prevCol && prevCol.blocks) || [];
                 const labelBlock = prevBlocks.find((b) => {
                   const bt = (b.block_type || b.blockType || "").toUpperCase();
-                  return (
-                    (bt === "TEXT_STATIC" || bt === "TEXT") &&
-                    (b.text || b.label)
-                  );
+                  return (bt === "TEXT_STATIC" || bt === "TEXT") && (b.text || b.label);
                 });
 
                 if (labelBlock) {
@@ -2026,8 +2014,7 @@ function collectFieldsFromSchema(schema) {
                   const colTag = col.excel_col || cIdx + 1;
                   const key = `cell_${rowTag}_${colTag}`;
 
-                  const labelText =
-                    labelBlock.text || labelBlock.label || key;
+                  const labelText = labelBlock.text || labelBlock.label || key;
 
                   let type = "TEXT";
                   if (LABEL_FILE_REGEX.test(labelText || "")) {
@@ -2050,21 +2037,14 @@ function collectFieldsFromSchema(schema) {
               if (!createdFromLeft && rowIdx > 0) {
                 const headerRow = rows[rowIdx - 1];
                 if (headerRow) {
-                  const headerCols =
-                    headerRow.columns ||
-                    headerRow.blocks ||
-                    headerRow.cols ||
-                    [];
+                  const headerCols = headerRow.columns || headerRow.blocks || headerRow.cols || [];
                   const headerCol = headerCols[cIdx];
                   if (headerCol) {
                     const headerBlocks = headerCol.blocks || [];
                     const headerLabelBlock = headerBlocks.find((b) => {
                       const bt = (b.block_type || b.blockType || "").toUpperCase();
                       const txt = b.text || b.label;
-                      return (
-                        txt &&
-                        (bt === "TEXT_STATIC" || bt === "TEXT")
-                      );
+                      return txt && (bt === "TEXT_STATIC" || bt === "TEXT");
                     });
 
                     if (headerLabelBlock) {
@@ -2072,11 +2052,8 @@ function collectFieldsFromSchema(schema) {
                       const colTag = col.excel_col || cIdx + 1;
                       const key = `cell_${rowTag}_${colTag}`;
                       if (!seen.has(key)) {
-                        const labelText = String(
-                          headerLabelBlock.text ||
-                            headerLabelBlock.label ||
-                            key
-                        ).trim();
+                        const labelText = String(headerLabelBlock.text || headerLabelBlock.label || key)
+                          .trim();
 
                         let type = "TEXT";
                         if (LABEL_FILE_REGEX.test(labelText || "")) {
@@ -2102,7 +2079,6 @@ function collectFieldsFromSchema(schema) {
       });
     });
   };
-  
 
   if (Array.isArray(schema.sections)) {
     visitSectionsArray(schema.sections);
@@ -2158,9 +2134,7 @@ function collectFieldsFromSchema(schema) {
           const key = `cell_${rowTag}_${colTag}`;
           if (seen.has(key)) return;
 
-          const labelText = String(
-            labelBlock.text || labelBlock.label || key
-          ).trim();
+          const labelText = String(labelBlock.text || labelBlock.label || key).trim();
 
           let type = "TEXT";
           if (LABEL_FILE_REGEX.test(labelText || "")) {
@@ -2188,7 +2162,7 @@ function collectFieldsFromSchema(schema) {
    MAIN COMPONENT
 ================================================================== */
 const ProjectFormFillPage = () => {
-    const printRef = useRef(null);
+  const printRef = useRef(null);
 
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -2203,22 +2177,17 @@ const ProjectFormFillPage = () => {
     "";
 
   const qpResponseId = searchParams.get("response_id") || "";
-  const [responseId, setResponseId] = useState(
-    qpResponseId ? Number(qpResponseId) : null
-  );
+  const [responseId, setResponseId] = useState(qpResponseId ? Number(qpResponseId) : null);
   const [responsePayload, setResponsePayload] = useState(null);
   const [responseLoading, setResponseLoading] = useState(Boolean(qpResponseId));
 
   const [projectId] = useState(qpProjectId);
-  const [assignment, setAssignment] = useState(
-    () => location.state?.assignment || null
-  );
+  const [assignment, setAssignment] = useState(() => location.state?.assignment || null);
 
   // 👇 image width+height per field, and which image is selected
   const [imageSizes, setImageSizes] = useState({});
   const [activeImageKey, setActiveImageKey] = useState(null);
-  const getImageSize = (fieldKey) =>
-    imageSizes[fieldKey] || { width: 120, height: 60 }; // default size
+  const getImageSize = (fieldKey) => imageSizes[fieldKey] || { width: 180, height: 90 };
 
   const [formValues, setFormValues] = useState({});
   const [errors, setErrors] = useState({});
@@ -2229,51 +2198,36 @@ const ProjectFormFillPage = () => {
   const [projectUsers, setProjectUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [forwardToUserId, setForwardToUserId] = useState("");
-  const [forwardDecision, setForwardDecision] = useState("APPROVED"); // ACCEPT by default
+  const [forwardDecision, setForwardDecision] = useState("APPROVED");
 
-  // ✅ Export PDF (Print)
-//   const handleExportPdf = () => {
-//     // keep it simple: no extra popups/toasts
-//     // close image panel for clean print (optional)
-//     setActiveImageKey(null);
-//     window.print();
-//   };
+  const handleExportPdf = () => {
+    setActiveImageKey(null);
 
-const handleExportPdf = () => {
-  setActiveImageKey(null);
+    setTimeout(() => {
+      const el = printRef.current;
+      if (!el) {
+        window.print();
+        return;
+      }
 
-  // allow DOM to settle (close panels etc.)
-  setTimeout(() => {
-    const el = printRef.current;
-    if (!el) {
+      const mmToPx = (mm) => (mm / 25.4) * 96;
+      const pageWidthMm = 297;
+      const marginMm = 8;
+      const availablePx = mmToPx(pageWidthMm - marginMm * 2);
+
+      const srcWidth = el.scrollWidth || el.getBoundingClientRect().width;
+      const scale = Math.min(1, availablePx / srcWidth);
+
+      document.documentElement.style.setProperty("--pf-print-width", `${srcWidth}px`);
+      document.documentElement.style.setProperty("--pf-print-scale", `${scale}`);
+
       window.print();
-      return;
-    }
-
-    // A4 LANDSCAPE inner width (match @page below)
-    const mmToPx = (mm) => (mm / 25.4) * 96;
-    const pageWidthMm = 297;     // A4 landscape width
-    const marginMm = 8;          // must match @page margin
-    const availablePx = mmToPx(pageWidthMm - marginMm * 2);
-
-    const srcWidth = el.scrollWidth || el.getBoundingClientRect().width;
-    const scale = Math.min(1, availablePx / srcWidth);
-
-    // store css vars for print
-    document.documentElement.style.setProperty("--pf-print-width", `${srcWidth}px`);
-    document.documentElement.style.setProperty("--pf-print-scale", `${scale}`);
-
-    window.print();
-  }, 50);
-};
-
+    }, 50);
+  };
 
   useEffect(() => {
     console.log("📦 [Fill] assignment object:", assignment);
-    console.log(
-      "📦 [Fill] template_version_detail:",
-      assignment?.template_version_detail
-    );
+    console.log("📦 [Fill] template_version_detail:", assignment?.template_version_detail);
   }, [assignment]);
 
   useEffect(() => {
@@ -2289,7 +2243,6 @@ const handleExportPdf = () => {
     const load = async () => {
       setLoading(true);
       try {
-        // 1) Try assignments (admin scope)
         const res = await getAssignedFormsForProject(projectId);
         const list = normalizeList(res);
 
@@ -2299,7 +2252,6 @@ const handleExportPdf = () => {
           return;
         }
 
-        // 2) ✅ Fallback: tasks (user scope) -> redirect to task fill page
         const tRes = await listFormTasks({ project_id: Number(projectId) });
         const tasks = normalizeList(tRes);
 
@@ -2345,11 +2297,10 @@ const handleExportPdf = () => {
 
     for (const [k, v] of Object.entries(out)) {
       if (v instanceof File) {
-        // safety: 1.5MB cap (change if needed)
         if (v.size > 1.5 * 1024 * 1024) {
           throw new Error(`File too large for ${k}. Please upload smaller image.`);
         }
-        out[k] = await fileToDataUrl(v); // ✅ base64
+        out[k] = await fileToDataUrl(v);
       }
     }
     return out;
@@ -2380,7 +2331,6 @@ const handleExportPdf = () => {
 
   const allFields = useMemo(() => collectFieldsFromSchema(schema), [schema]);
 
-  // Map by key (cell_.. or normal)
   const fieldMapByKey = useMemo(() => {
     const map = {};
     allFields.forEach((f) => {
@@ -2396,25 +2346,25 @@ const handleExportPdf = () => {
 
   const prefillAnswers = useMemo(() => {
     const a = responsePayload?.answers || responsePayload?.data || {};
-    // backend me file fields {} aa rahe hain, use null treat karo
     const cleaned = {};
     Object.entries(a || {}).forEach(([k, v]) => {
       if (v && typeof v === "object" && !(v instanceof File) && !Array.isArray(v)) {
-        cleaned[k] = Object.keys(v).length ? v : null; // {} -> null
+        cleaned[k] = Object.keys(v).length ? v : null;
       } else {
         cleaned[k] = v;
       }
     });
     return cleaned;
   }, [responsePayload]);
-useEffect(() => {
-  const cleanup = () => {
-    document.documentElement.style.removeProperty("--pf-print-width");
-    document.documentElement.style.removeProperty("--pf-print-scale");
-  };
-  window.addEventListener("afterprint", cleanup);
-  return () => window.removeEventListener("afterprint", cleanup);
-}, []);
+
+  useEffect(() => {
+    const cleanup = () => {
+      document.documentElement.style.removeProperty("--pf-print-width");
+      document.documentElement.style.removeProperty("--pf-print-scale");
+    };
+    window.addEventListener("afterprint", cleanup);
+    return () => window.removeEventListener("afterprint", cleanup);
+  }, []);
 
   useEffect(() => {
     if (!responseId) return;
@@ -2454,13 +2404,11 @@ useEffect(() => {
       else initial[key] = field.type === "FILE" ? null : "";
     });
 
-    // ✅ IMPORTANT: prefillAnswers merge
     setFormValues({ ...initial, ...prefillAnswers });
     setErrors({});
   }, [assignment, allFields, prefillAnswers]);
 
-  const getFieldLabel = (field) =>
-    field.label || field.title || field.key || "Field";
+  const getFieldLabel = (field) => field.label || field.title || field.key || "Field";
 
   const isFieldRequired = (field) => {
     const cfg = field.config || {};
@@ -2478,11 +2426,7 @@ useEffect(() => {
       if (!isFieldRequired(field)) return;
 
       const v = formValues[field.key];
-      const isEmpty =
-        v === undefined ||
-        v === null ||
-        v === "" ||
-        (Array.isArray(v) && v.length === 0);
+      const isEmpty = v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
 
       if (isEmpty) newErrors[field.key] = "Required";
     });
@@ -2507,20 +2451,17 @@ useEffect(() => {
 
     setSubmitting(true);
     try {
-      // ✅ convert File -> base64 so it actually saves
       const finalAnswers = await normalizeAnswersForSubmit(formValues);
 
       let savedResponseId = responseId;
 
       if (savedResponseId) {
-        // ✅ EDIT MODE (prefilled response)
         await updateFormResponse(savedResponseId, {
           status,
           answers: finalAnswers,
-          data: finalAnswers, // safe
+          data: finalAnswers,
         });
       } else {
-        // ✅ CREATE MODE
         const payload = {
           template_version: templateVersionId,
           assignment: assignment.id,
@@ -2539,15 +2480,12 @@ useEffect(() => {
         setResponseId(savedResponseId);
       }
 
-      // ✅ forward on same response id
       if (savedResponseId && forwardToUserId) {
         await forwardFormResponse(savedResponseId, {
           to_user_id: Number(forwardToUserId),
           decision: forwardDecision,
         });
-        toast.success(
-          status === "DRAFT" ? "Saved (draft) and forwarded." : "Submitted and forwarded."
-        );
+        toast.success(status === "DRAFT" ? "Saved (draft) and forwarded." : "Submitted and forwarded.");
       } else {
         toast.success(status === "DRAFT" ? "Saved as draft." : "Submitted.");
       }
@@ -2561,7 +2499,7 @@ useEffect(() => {
     }
   };
 
-  // 🔧 FILE + normal fields (unchanged)
+  // 🔧 FILE + normal fields (UI tightened; logic same)
   const renderField = (field, opts = {}) => {
     if (!field || !field.key) return null;
     const { compact = false } = opts;
@@ -2582,19 +2520,16 @@ useEffect(() => {
     const commonLabel = showLabel ? (
       <label className="block text-[11px] font-medium mb-1">
         {label}
-        {isFieldRequired(field) && (
-          <span className="text-red-500 ml-0.5">*</span>
-        )}
+        {isFieldRequired(field) && <span className="text-red-500 ml-0.5">*</span>}
       </label>
     ) : null;
 
-    const commonError = error ? (
-      <div className="text-[10px] text-red-500 mt-0.5">{error}</div>
-    ) : null;
+    const commonError = error ? <div className="text-[10px] text-red-500 mt-0.5">{error}</div> : null;
 
+    // ✅ tighter + min-w-0 to stop overflow/overlay in grid
     const inputBase =
-      "w-full border rounded text-xs " +
-      (compact ? "px-1 py-[3px]" : "px-2 py-1");
+      "w-full min-w-0 border rounded text-xs leading-tight focus:outline-none " +
+      (compact ? "px-1 py-[1px] h-[22px]" : "px-2 py-1");
 
     const isFileLike =
       rawType === "FILE" ||
@@ -2604,42 +2539,42 @@ useEffect(() => {
       rawType.includes("UPLOAD") ||
       rawType.includes("IMAGE");
 
-    // ✅ FILE / IMAGE fields: image preview + click -> top panel sliders
     if (isFileLike) {
+      const fileInputId = `pf_file_${key}`;
       let previewUrl = null;
 
       if (value) {
-        if (typeof value === "string") {
-          previewUrl = value;
-        } else if (value instanceof File) {
-          previewUrl = URL.createObjectURL(value);
-        }
+        if (typeof value === "string") previewUrl = value;
+        else if (value instanceof File) previewUrl = URL.createObjectURL(value);
       }
 
       const { width: imgWidth, height: imgHeight } = getImageSize(key);
 
       const clearImage = () => {
-        // clear value
         handleChange(key, null);
 
-        // clear sliders state
         setImageSizes((prev) => {
           const next = { ...prev };
           delete next[key];
           return next;
         });
 
-        // close top slider panel if this was active
         setActiveImageKey((prev) => (prev === key ? null : prev));
       };
 
+      // ✅ compact thumb limits so it NEVER overlays other rows
+      // ✅ compact thumb (bigger)
+const compactThumb = {
+  maxHeight: 80,
+  maxWidth: "100%",
+};
+
       return (
-        <div key={key} className={compact ? "" : "mb-2"}>
+        <div key={key} className={(compact ? "pf-fieldwrap" : "pf-fieldwrap mb-2")}>
           {commonLabel}
 
           {previewUrl && (
-            <div className="flex flex-col items-center mb-1 relative">
-              {/* ❌ Clear button */}
+            <div className={compact ? "flex items-center gap-2 relative" : "flex flex-col items-center mb-1 relative"}>
               <button
                 type="button"
                 onClick={clearImage}
@@ -2652,48 +2587,85 @@ useEffect(() => {
               <img
                 src={previewUrl}
                 alt={label}
-                className="object-contain cursor-pointer"
-                style={{ maxHeight: imgHeight, maxWidth: imgWidth }}
+  className="object-contain cursor-pointer rounded border border-gray-200 bg-white"
+                style={compact ? compactThumb : { maxHeight: imgHeight, maxWidth: imgWidth }}
                 onClick={() => {
-                  // image select -> open top panel
                   setActiveImageKey(key);
                   if (!imageSizes[key]) {
                     setImageSizes((prev) => ({
                       ...prev,
-                      [key]: { width: 120, height: 60 },
+                      [key]: { width: 180, height: 90 },
                     }));
                   }
                 }}
               />
-              <div className="text-[9px] text-gray-400 mt-0.5 no-print">
-                Click image to adjust size above
-              </div>
+
+              {!compact && (
+                <div className="text-[9px] text-gray-400 mt-0.5 no-print">Click image to adjust size above</div>
+              )}
             </div>
           )}
 
-          {/* hide file input in PDF print */}
-          <input
-            type="file"
-            className={inputBase + " no-print"}
-            onChange={(e) => {
-              const file = e.target.files && e.target.files[0];
-              handleChange(key, file || null);
 
-              // Agar pehli baar file choose kar rahe ho toh default size set karo
-              if (file && !imageSizes[key]) {
-                setImageSizes((prev) => ({
-                  ...prev,
-                  [key]: { width: 120, height: 60 },
-                }));
-              }
-            }}
-            accept={cfg.accept || ".png,.jpg,.jpeg,.webp,.svg,.pdf"}
-          />
+{compact ? (
+  <>
+    {/* hidden real input */}
+    <input
+      id={fileInputId}
+      type="file"
+      className="hidden"
+      onChange={(e) => {
+        const file = e.target.files && e.target.files[0];
+        handleChange(key, file || null);
 
-          {value && value.name && value instanceof File && (
-            <div className="mt-1 text-[10px] text-gray-600 no-print">
-              Selected: {value.name}
-            </div>
+        if (file && !imageSizes[key]) {
+          setImageSizes((prev) => ({
+            ...prev,
+            [key]: { width: 180, height: 90 },
+          }));
+        }
+      }}
+      accept={cfg.accept || ".png,.jpg,.jpeg,.webp,.svg,.pdf"}
+    />
+
+    {/* visible compact button */}
+    <label
+      htmlFor={fileInputId}
+      className="no-print inline-flex items-center gap-2 w-full border rounded px-1 h-[18px] text-[10px] bg-white cursor-pointer"
+      title="Upload file"
+    >
+      <span className="shrink-0">Choose</span>
+      <span className="text-gray-500 truncate min-w-0">
+        {value instanceof File
+          ? value.name
+          : typeof value === "string" && value
+          ? "Uploaded"
+          : "No file"}
+      </span>
+    </label>
+  </>
+) : (
+  <input
+    type="file"
+    className={inputBase + " no-print"}
+    onChange={(e) => {
+      const file = e.target.files && e.target.files[0];
+      handleChange(key, file || null);
+
+      if (file && !imageSizes[key]) {
+        setImageSizes((prev) => ({
+          ...prev,
+          [key]: { width: 180, height: 90 },
+        }));
+      }
+    }}
+    accept={cfg.accept || ".png,.jpg,.jpeg,.webp,.svg,.pdf"}
+  />
+)}
+
+
+          {value && value.name && value instanceof File && !compact && (
+            <div className="mt-1 text-[10px] text-gray-600 no-print">Selected: {value.name}</div>
           )}
 
           {commonError}
@@ -2701,14 +2673,13 @@ useEffect(() => {
       );
     }
 
-    // ---- normal fields below ----
     switch (rawType) {
       case "TEXT":
       case "PHONE":
       case "EMAIL":
       case "NUMBER":
         return (
-          <div key={key} className={compact ? "" : "mb-2"}>
+          <div key={key} className={(compact ? "pf-fieldwrap" : "pf-fieldwrap mb-2")}>
             {commonLabel}
             <input
               type={rawType === "NUMBER" ? "number" : "text"}
@@ -2723,7 +2694,7 @@ useEffect(() => {
 
       case "DATE":
         return (
-          <div key={key} className={compact ? "" : "mb-2"}>
+          <div key={key} className={(compact ? "pf-fieldwrap" : "pf-fieldwrap mb-2")}>
             {commonLabel}
             <input
               type="date"
@@ -2739,11 +2710,12 @@ useEffect(() => {
 
       case "TEXTAREA":
         return (
-          <div key={key} className={compact ? "" : "mb-2"}>
+          <div key={key} className={(compact ? "pf-fieldwrap" : "pf-fieldwrap mb-2")}>
             {commonLabel}
             <textarea
               className={
-                inputBase + " min-h-[80px] " + (compact ? "resize-none" : "")
+                "w-full min-w-0 border rounded text-xs leading-tight focus:outline-none " +
+                (compact ? "px-1 py-1 min-h-[44px] max-h-full overflow-auto resize-none" : "px-2 py-1 min-h-[80px]")
               }
               value={value ?? ""}
               placeholder={placeholder}
@@ -2756,7 +2728,7 @@ useEffect(() => {
       case "DROPDOWN":
       case "SELECT":
         return (
-          <div key={key} className={compact ? "" : "mb-2"}>
+          <div key={key} className={(compact ? "pf-fieldwrap" : "pf-fieldwrap mb-2")}>
             {commonLabel}
             <select
               className={inputBase + " bg-white"}
@@ -2789,22 +2761,11 @@ useEffect(() => {
       case "BOOLEAN":
       case "CHECKBOX":
         return (
-          <div
-            key={key}
-            className={
-              "flex items-center gap-2 " + (compact ? "" : "mb-2")
-            }
-          >
-            <input
-              type="checkbox"
-              checked={!!value}
-              onChange={(e) => handleChange(key, e.target.checked)}
-            />
-            <span className="text-[11px]">
+          <div key={key} className={"pf-fieldwrap flex items-center gap-2 " + (compact ? "" : "mb-2")}>
+            <input type="checkbox" checked={!!value} onChange={(e) => handleChange(key, e.target.checked)} />
+            <span className="text-[11px] min-w-0">
               {label}
-              {isFieldRequired(field) && (
-                <span className="text-red-500 ml-0.5">*</span>
-              )}
+              {isFieldRequired(field) && <span className="text-red-500 ml-0.5">*</span>}
             </span>
             {commonError}
           </div>
@@ -2812,7 +2773,7 @@ useEffect(() => {
 
       default:
         return (
-          <div key={key} className={compact ? "" : "mb-2"}>
+          <div key={key} className={(compact ? "pf-fieldwrap" : "pf-fieldwrap mb-2")}>
             {commonLabel}
             <input
               type="text"
@@ -2863,10 +2824,7 @@ useEffect(() => {
               onChange={(e) => {
                 const w = Number(e.target.value);
                 setImageSizes((prev) => {
-                  const current = prev[activeImageKey] || {
-                    width: 120,
-                    height,
-                  };
+                  const current = prev[activeImageKey] || { width: 120, height };
                   return {
                     ...prev,
                     [activeImageKey]: { ...current, width: w },
@@ -2875,9 +2833,7 @@ useEffect(() => {
               }}
               className="w-full"
             />
-            <div className="text-[10px] text-gray-500">
-              Logo width: {width}px
-            </div>
+            <div className="text-[10px] text-gray-500">Logo width: {width}px</div>
           </div>
           <div>
             <input
@@ -2888,10 +2844,7 @@ useEffect(() => {
               onChange={(e) => {
                 const h = Number(e.target.value);
                 setImageSizes((prev) => {
-                  const current = prev[activeImageKey] || {
-                    width,
-                    height: 60,
-                  };
+                  const current = prev[activeImageKey] || { width, height: 60 };
                   return {
                     ...prev,
                     [activeImageKey]: { ...current, height: h },
@@ -2900,9 +2853,7 @@ useEffect(() => {
               }}
               className="w-full"
             />
-            <div className="text-[10px] text-gray-500">
-              Logo height: {height}px
-            </div>
+            <div className="text-[10px] text-gray-500">Logo height: {height}px</div>
           </div>
         </div>
       </div>
@@ -2914,14 +2865,9 @@ useEffect(() => {
   ------------------------------------------------------------------ */
   const renderBody = () => {
     if (!schema || (!schema.sections && !schema.fields)) {
-      return (
-        <div className="text-sm text-gray-500">
-          No schema defined for this form.
-        </div>
-      );
+      return <div className="text-sm text-gray-500">No schema defined for this form.</div>;
     }
 
-    // CASE 1: sections
     if (Array.isArray(schema.sections) && schema.sections.length) {
       const meta = schema.excel_meta || null;
       const hasExcelMeta = !!meta;
@@ -2933,7 +2879,7 @@ useEffect(() => {
         return (
           <div
             key={sec.key || sec.id || sIdx}
-  className="pf-section border rounded-md bg-white mb-4 overflow-x-auto"
+            className="pf-section border rounded-md bg-white mb-4 overflow-x-auto"
           >
             {sec.title && (
               <div className="px-3 py-2 border-b">
@@ -2947,94 +2893,115 @@ useEffect(() => {
                   const metaColWidths = meta.col_widths || [];
                   const minCol = meta.min_col || 1;
 
-                  const firstRowCols =
-                    rows[0]?.columns ||
-                    rows[0]?.blocks ||
-                    rows[0]?.cols ||
-                    [];
+                  const firstRowCols = rows[0]?.columns || rows[0]?.blocks || rows[0]?.cols || [];
+                  const nCols = metaColWidths.length || (firstRowCols.length || 1);
 
-                  const nCols =
-                    metaColWidths.length || (firstRowCols.length || 1);
-
-                  // 🔎 header labels (top row)
                   let headerLabels = [];
                   if (rows.length) {
                     const headerRow = rows[0];
-                    const headerCols =
-                      headerRow.columns ||
-                      headerRow.blocks ||
-                      headerRow.cols ||
-                      [];
+                    const headerCols = headerRow.columns || headerRow.blocks || headerRow.cols || [];
                     headerLabels = headerCols.map((col) => {
                       const blocks = col.blocks || [];
                       const textBlock = blocks.find((b) => {
                         const bt = (b.block_type || b.blockType || "").toUpperCase();
                         const txt = b.text || b.label;
-                        return (
-                          txt &&
-                          (bt === "TEXT_STATIC" || bt === "TEXT")
-                        );
+                        return txt && (bt === "TEXT_STATIC" || bt === "TEXT");
                       });
-                      return textBlock
-                        ? String(
-                            textBlock.text || textBlock.label || ""
-                          )
-                            .trim()
-                            .toLowerCase()
-                        : "";
+                      return textBlock ? String(textBlock.text || textBlock.label || "").trim().toLowerCase() : "";
                     });
                   }
 
-                  // base widths from Excel or equal
                   let colWidths = [...metaColWidths];
                   if (!colWidths.length) {
                     colWidths = new Array(nCols).fill(1);
                   }
 
-                  // 📏 widen date-ish columns thoda
                   colWidths = colWidths.map((w, idx) => {
                     const label = headerLabels[idx] || "";
-                    if (
-                      label.includes("target date") ||
-                      label.includes("status on (date)") ||
-                      label.includes("status on ")
-                    ) {
+                    if (label.includes("target date") || label.includes("status on (date)") || label.includes("status on ")) {
                       return (w || 1) * 1.5;
                     }
                     return w || 1;
                   });
 
-                  const totalUnits =
-                    colWidths.reduce((sum, w) => sum + (w || 0), 0) || 1;
+                  const totalUnits = colWidths.reduce((sum, w) => sum + (w || 0), 0) || 1;
 
-                  const gridTemplateColumns = colWidths
-                    .map((w) => `${(w / totalUnits) * 100}%`)
-                    .join(" ");
+                  const gridTemplateColumns = colWidths.map((w) => `${(w / totalUnits) * 100}%`).join(" ");
 
-                  const rowHeights = rows.map((row) => row.height || 20);
-                  const gridTemplateRows = rowHeights
-                    .map((h) => `${h + 4}px`)
-                    .join(" ");
+                  const isFileLikeField = (f) => {
+  const t = String(f?.type || f?.field_type || "").toUpperCase();
+  const lbl = String(f?.label || f?.title || f?.key || "");
+  return (
+    t === "FILE" ||
+    t === "IMAGE" ||
+    t === "LOGO" ||
+    t.includes("FILE") ||
+    t.includes("UPLOAD") ||
+    t.includes("IMAGE") ||
+    LABEL_FILE_REGEX.test(lbl)
+  );
+};
+
+const rowNeedsTall = (row, rIdx) => {
+  const columns = row.columns || row.blocks || row.cols || [];
+  return columns.some((col, cIdx) => {
+    const blocks = col.blocks || [];
+    const colFields = col.fields || [];
+
+    // image/logo blocks
+    const hasImgBlock = blocks.some((b) => {
+      const bt = String(b.block_type || b.blockType || "").toUpperCase();
+      return bt === "IMAGE" || bt === "LOGO";
+    });
+    if (hasImgBlock) return true;
+
+    // explicit block fields
+    const bf = blocks.map((b) => extractFieldFromBlock(b)).find(Boolean);
+    if (bf && isFileLikeField(bf)) return true;
+
+    // col.fields
+    const cf = colFields.find((f) => isFileLikeField(f));
+    if (cf) return true;
+
+    // autoField
+    if (col._autoField && isFileLikeField(col._autoField)) return true;
+
+    // coord key mapping
+    const rowTag = row.excel_row || rIdx + 1;
+    const colTag = col.excel_col || cIdx + 1;
+    const coordKey = `cell_${rowTag}_${colTag}`;
+    if (isFileLikeField(fieldMapByKey[coordKey])) return true;
+
+    return false;
+  });
+};
+
+// ✅ rows with file/image get bigger height
+const gridTemplateRows = rows
+  .map((row, idx) => {
+    const base = (row.height || 20) + 6;
+    const minH = rowNeedsTall(row, idx) ? 110 : 28; // 👈 FILE row min height
+    return `${Math.max(base, minH)}px`;
+  })
+  .join(" ");
+
 
                   return (
                     <div
-                      className="grid text-[11px]"
+                      className="pf-grid grid"
                       style={{
                         gridTemplateColumns,
                         gridTemplateRows,
                       }}
                     >
                       {rows.map((row, rIdx) => {
-                        const columns =
-                          row.columns || row.blocks || row.cols || [];
+                        const columns = row.columns || row.blocks || row.cols || [];
                         return columns.map((col, cIdx) => {
                           const merge = col.merge || {};
                           const isMerged = !!merge.is_merged;
                           const isTopLeft = merge.is_top_left !== false;
 
-                          if (isMerged && !isTopLeft) {
-                            return null;
-                          }
+                          if (isMerged && !isTopLeft) return null;
 
                           const rowSpan = merge.row_span || 1;
                           const colSpan = merge.col_span || 1;
@@ -3046,32 +3013,21 @@ useEffect(() => {
                           const colTag = col.excel_col || cIdx + 1;
                           const coordKey = `cell_${rowTag}_${colTag}`;
 
-                          let fieldToRender =
-                            fieldMapByKey[coordKey] || null;
+                          let fieldToRender = fieldMapByKey[coordKey] || null;
 
                           if (!fieldToRender && blocks.length) {
-                            const fromBlocks = blocks
-                              .map((b) => extractFieldFromBlock(b))
-                              .find((f) => f && f.key);
+                            const fromBlocks = blocks.map((b) => extractFieldFromBlock(b)).find((f) => f && f.key);
                             if (fromBlocks) fieldToRender = fromBlocks;
                           }
 
                           if (!fieldToRender && colFields.length) {
                             const raw = colFields.find((f) => f && f.key);
                             if (raw) {
-                              let type = (
-                                raw.type ||
-                                raw.field_type ||
-                                "TEXT"
-                              ).toUpperCase();
-                              if (
-                                type === "LONG_TEXT" ||
-                                type === "MULTILINE"
-                              ) {
+                              let type = (raw.type || raw.field_type || "TEXT").toUpperCase();
+                              if (type === "LONG_TEXT" || type === "MULTILINE") {
                                 type = "TEXTAREA";
                               }
-                              const label =
-                                raw.label || raw.title || raw.key;
+                              const label = raw.label || raw.title || raw.key;
                               if (LABEL_FILE_REGEX.test(label || "")) {
                                 type = "FILE";
                               }
@@ -3079,11 +3035,8 @@ useEffect(() => {
                                 key: raw.key,
                                 label,
                                 type,
-                                config:
-                                  raw.config || raw.field_config || {},
-                                required: !!(
-                                  raw.required || raw.is_required
-                                ),
+                                config: raw.config || raw.field_config || {},
+                                required: !!(raw.required || raw.is_required),
                               };
                             }
                           }
@@ -3094,19 +3047,14 @@ useEffect(() => {
 
                           const textBlocks = blocks.filter((b) => {
                             const bt = (b.block_type || "").toUpperCase();
-                            return (
-                              bt === "TEXT_STATIC" || bt === "TEXT"
-                            );
+                            return bt === "TEXT_STATIC" || bt === "TEXT";
                           });
 
                           const imageBlocks = blocks.filter((b) => {
                             const bt = (b.block_type || "").toUpperCase();
-                            return (
-                              bt === "IMAGE" || bt === "LOGO"
-                            );
+                            return bt === "IMAGE" || bt === "LOGO";
                           });
 
-                          // LAST chance: match by label text
                           if (!fieldToRender && textBlocks.length) {
                             const labelTextRaw = textBlocks
                               .map((b) => b.text || b.label || "")
@@ -3114,37 +3062,21 @@ useEffect(() => {
                               .trim();
 
                             if (labelTextRaw) {
-                              const matched = allFields.find(
-                                (f) =>
-                                  (f.label || "").trim() ===
-                                  labelTextRaw
-                              );
+                              const matched = allFields.find((f) => (f.label || "").trim() === labelTextRaw);
                               if (matched) {
-                                console.log(
-                                  "🔗 [Fill] matched field by label:",
-                                  labelTextRaw,
-                                  "->",
-                                  matched.key
-                                );
+                                console.log("🔗 [Fill] matched field by label:", labelTextRaw, "->", matched.key);
                                 fieldToRender = matched;
                               }
                             }
                           }
 
-                          const startCol =
-                            (col.excel_col || cIdx + minCol) -
-                            minCol +
-                            1;
+                          const startCol = (col.excel_col || cIdx + minCol) - minCol + 1;
                           const startRow = rIdx + 1;
 
                           // 👉 inline rule: 1 label + 1 simple field => label and input on same line
                           let canInline = false;
                           if (textBlocks.length === 1 && fieldToRender) {
-                            const fType = (
-                              fieldToRender.type ||
-                              fieldToRender.field_type ||
-                              "TEXT"
-                            ).toUpperCase();
+                            const fType = (fieldToRender.type || fieldToRender.field_type || "TEXT").toUpperCase();
                             const isFile =
                               fType === "FILE" ||
                               fType === "IMAGE" ||
@@ -3152,10 +3084,7 @@ useEffect(() => {
                               fType.includes("FILE") ||
                               fType.includes("UPLOAD") ||
                               fType.includes("IMAGE");
-                            const isTextarea =
-                              fType === "TEXTAREA" ||
-                              fType === "LONG_TEXT" ||
-                              fType === "MULTILINE";
+                            const isTextarea = fType === "TEXTAREA" || fType === "LONG_TEXT" || fType === "MULTILINE";
 
                             if (!isFile && !isTextarea) {
                               canInline = true;
@@ -3165,7 +3094,7 @@ useEffect(() => {
                           return (
                             <div
                               key={`${rIdx}-${cIdx}`}
-                              className="pf-cell border border-gray-200 p-1 align-top"
+                              className="pf-cell border border-gray-200 align-top"
                               style={{
                                 gridColumnStart: startCol,
                                 gridColumnEnd: startCol + colSpan,
@@ -3173,51 +3102,38 @@ useEffect(() => {
                                 gridRowEnd: startRow + rowSpan,
                               }}
                             >
-                              {canInline ? (
-                                <div className="flex items-center gap-1">
-                                  <span className="whitespace-nowrap">
-                                    {textBlocks[0].text ||
-                                      textBlocks[0].label ||
-                                      ""}
-                                  </span>
-                                  <div className="flex-1">
-                                    {renderField(fieldToRender, {
-                                      compact: true,
-                                    })}
+                              <div className="pf-cell-inner">
+                                {canInline ? (
+                                  <div className="pf-inline">
+                                    <span title={textBlocks[0].text || textBlocks[0].label || ""}>
+                                      {textBlocks[0].text || textBlocks[0].label || ""}
+                                    </span>
+                                    <div className="pf-field">
+                                      {renderField(fieldToRender, { compact: true })}
+                                    </div>
                                   </div>
-                                </div>
-                              ) : (
-                                <>
-                                  {textBlocks.length > 0 && (
-                                    <div className="whitespace-pre-wrap leading-tight">
-                                      {textBlocks.map((b, idx2) => (
-                                        <div key={idx2}>
-                                          {b.text || b.label || ""}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
+                                ) : (
+                                  <>
+                                    {textBlocks.length > 0 && (
+                                      <div className="pf-text">
+                                        {textBlocks.map((b, idx2) => (
+                                          <div key={idx2}>{b.text || b.label || ""}</div>
+                                        ))}
+                                      </div>
+                                    )}
 
-                                  {/* Placeholder only if koi interactive field nahi hai */}
-                                  {imageBlocks.length > 0 && !fieldToRender && (
-                                    <div className="mt-1 text-[10px] text-gray-400 italic">
-                                      [Logo / image placeholder]
-                                    </div>
-                                  )}
+                                    {imageBlocks.length > 0 && !fieldToRender && (
+                                      <div className="text-[10px] text-gray-400 italic">[Logo / image placeholder]</div>
+                                    )}
 
-                                  {fieldToRender && (
-                                    <div
-                                      className={
-                                        textBlocks.length ? "mt-1" : ""
-                                      }
-                                    >
-                                      {renderField(fieldToRender, {
-                                        compact: true,
-                                      })}
-                                    </div>
-                                  )}
-                                </>
-                              )}
+                                    {fieldToRender && (
+                                      <div className="pf-field">
+                                        {renderField(fieldToRender, { compact: true })}
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
                             </div>
                           );
                         });
@@ -3226,18 +3142,12 @@ useEffect(() => {
                   );
                 })()
               ) : (
-                // non-excel layout
                 (sec.rows || []).map((row, rIdx) => {
                   const columns = row.columns || row.blocks || row.cols || [];
                   if (!columns.length) return null;
 
                   const totalUnits =
-                    columns.reduce(
-                      (sum, c) =>
-                        sum +
-                        (typeof c.width === "number" ? c.width : 1),
-                      0
-                    ) || 1;
+                    columns.reduce((sum, c) => sum + (typeof c.width === "number" ? c.width : 1), 0) || 1;
 
                   return (
                     <div key={row.id || rIdx} className="flex">
@@ -3248,26 +3158,18 @@ useEffect(() => {
                         let fieldToRender = null;
 
                         if (blocks.length) {
-                          const fromBlocks = blocks
-                            .map((b) => extractFieldFromBlock(b))
-                            .find((f) => f && f.key);
+                          const fromBlocks = blocks.map((b) => extractFieldFromBlock(b)).find((f) => f && f.key);
                           if (fromBlocks) fieldToRender = fromBlocks;
                         }
 
                         if (!fieldToRender && colFields.length) {
                           const raw = colFields.find((f) => f && f.key);
                           if (raw) {
-                            let type = (
-                              raw.type || raw.field_type || "TEXT"
-                            ).toUpperCase();
-                            if (
-                              type === "LONG_TEXT" ||
-                              type === "MULTILINE"
-                            ) {
+                            let type = (raw.type || raw.field_type || "TEXT").toUpperCase();
+                            if (type === "LONG_TEXT" || type === "MULTILINE") {
                               type = "TEXTAREA";
                             }
-                            const label =
-                              raw.label || raw.title || raw.key;
+                            const label = raw.label || raw.title || raw.key;
                             if (LABEL_FILE_REGEX.test(label || "")) {
                               type = "FILE";
                             }
@@ -3275,11 +3177,8 @@ useEffect(() => {
                               key: raw.key,
                               label,
                               type,
-                              config:
-                                raw.config || raw.field_config || {},
-                              required: !!(
-                                raw.required || raw.is_required
-                              ),
+                              config: raw.config || raw.field_config || {},
+                              required: !!(raw.required || raw.is_required),
                             };
                           }
                         }
@@ -3290,46 +3189,38 @@ useEffect(() => {
 
                         const textBlocks = blocks.filter((b) => {
                           const bt = (b.block_type || "").toUpperCase();
-                          return (
-                            bt === "TEXT_STATIC" || bt === "TEXT"
-                          );
+                          return bt === "TEXT_STATIC" || bt === "TEXT";
                         });
 
                         const imageBlocks = blocks.filter((b) => {
                           const bt = (b.block_type || "").toUpperCase();
-                          return (
-                            bt === "IMAGE" || bt === "LOGO"
-                          );
+                          return bt === "IMAGE" || bt === "LOGO";
                         });
 
-                        const widthUnits =
-                          typeof col.width === "number" ? col.width : 1;
-                        const widthPercent =
-                          (widthUnits / totalUnits) * 100;
+                        const widthUnits = typeof col.width === "number" ? col.width : 1;
+                        const widthPercent = (widthUnits / totalUnits) * 100;
 
                         return (
                           <div
                             key={cIdx}
-                            className="border border-gray-200 px-2 py-1 align-top text-[11px]"
+                            className="border border-gray-200 align-top text-[11px] min-w-0 overflow-hidden"
                             style={{
                               flexBasis: `${widthPercent}%`,
                               maxWidth: `${widthPercent}%`,
+                              padding: "3px",
+                              boxSizing: "border-box",
                             }}
                           >
                             {textBlocks.length > 0 && (
-                              <div className="whitespace-pre-wrap leading-tight">
+                              <div className="whitespace-pre-wrap leading-tight break-words">
                                 {textBlocks.map((b, idx2) => (
-                                  <div key={idx2}>
-                                    {b.text || b.label || ""}
-                                  </div>
+                                  <div key={idx2}>{b.text || b.label || ""}</div>
                                 ))}
                               </div>
                             )}
 
                             {imageBlocks.length > 0 && !fieldToRender && (
-                              <div className="mt-1 text-[10px] text-gray-400 italic">
-                                [Logo / image placeholder]
-                              </div>
+                              <div className="mt-1 text-[10px] text-gray-400 italic">[Logo / image placeholder]</div>
                             )}
 
                             {fieldToRender && (
@@ -3352,7 +3243,6 @@ useEffect(() => {
       return <>{sectionsUI}</>;
     }
 
-    // CASE 2: flat fields
     if (Array.isArray(schema.fields)) {
       return (
         <div className="border rounded-md bg-white p-3">
@@ -3369,11 +3259,7 @@ useEffect(() => {
       );
     }
 
-    return (
-      <div className="text-sm text-gray-500">
-        Schema format not recognized.
-      </div>
-    );
+    return <div className="text-sm text-gray-500">Schema format not recognized.</div>;
   };
 
   if (!projectId || !qpAssignmentId) {
@@ -3388,84 +3274,136 @@ useEffect(() => {
   const tv = assignment?.template_version_detail || {};
   const tpl = tv.template_detail || {};
   const formTitle = tpl.name || tv.title || `Form v${tv.version || "-"}`;
-  const formCode = tpl.code;
 
   return (
-    <div id="pf-page-root" className="p-4 space-y-4">
+    <div id="pf-page-root" className="p-2 sm:p-4 space-y-4">
+      {/* ✅ Screen + Mobile alignment fixes (NO LOGIC CHANGE) */}
+      <style>{`
+        /* Excel-grid look + prevent overlay */
+        #pf-page-root .pf-section {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+        #pf-page-root .pf-grid {
+          width: 100%;
+          font-size: 11px;
+        }
+        #pf-page-root .pf-cell {
+          box-sizing: border-box;
+          padding: 3px;
+          overflow: hidden;       /* ✅ stop overlay */
+          min-width: 0;           /* ✅ allow shrink */
+          background: #fff;
+        }
+        #pf-page-root .pf-cell * {
+          box-sizing: border-box;
+        }
+        #pf-page-root .pf-cell-inner {
+          height: 100%;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          justify-content: flex-start;
+          min-width: 0;
+        }
+        #pf-page-root .pf-text {
+          font-size: 11px;
+          line-height: 1.15;
+          white-space: pre-wrap;
+          word-break: break-word;
+          overflow: hidden;
+          min-width: 0;
+        }
+        #pf-page-root .pf-field {
+          min-width: 0;
+        }
+
+        /* Inline label + input in same row */
+        #pf-page-root .pf-inline {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          min-width: 0;
+        }
+        #pf-page-root .pf-inline > span {
+          flex: 0 0 auto;
+          max-width: 55%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        /* Inputs inside grid cells */
+        #pf-page-root .pf-cell input,
+        #pf-page-root .pf-cell select,
+        #pf-page-root .pf-cell textarea {
+          max-width: 100%;
+          min-width: 0;
+        }
+
+        /* Mobile tweaks */
+        @media (max-width: 640px) {
+          #pf-page-root {
+            padding: 8px !important;
+          }
+          #pf-page-root .pf-cell {
+            padding: 2px;
+          }
+          #pf-page-root .pf-grid {
+            font-size: 10px;
+          }
+        }
+      `}</style>
+
       {/* ✅ Print CSS for PDF export */}
-      {/* <style>{`
-        @page { size: A4; margin: 12mm; }
+      <style>{`
+        @page { size: A4 landscape; margin: 8mm; }
+
         @media print {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          header, nav, footer, aside { display: none !important; }
+          .navbar, .topbar, .sidebar, .app-header, .layout-header, .layout-nav { display: none !important; }
+          html, body { margin: 0 !important; padding: 0 !important; height: auto !important; }
+          #root { min-height: 0 !important; height: auto !important; }
+
+          #pf-page-root > :not(#pf-print-root) { display: none !important; }
+          #pf-page-root { padding: 0 !important; margin: 0 !important; }
+
+          #pf-print-root {
+            display: block !important;
+            position: static !important;
+            width: var(--pf-print-width, 100%) !important;
+            zoom: var(--pf-print-scale, 1);
+          }
+
+          #pf-print-root .overflow-x-auto { overflow: visible !important; }
+
+          #pf-print-root .pf-cell {
+            overflow: hidden !important;
+            padding: 2px !important;
+          }
+
+          #pf-print-root input,
+          #pf-print-root select {
+            font-size: 10px !important;
+            line-height: 1.1 !important;
+            height: 16px !important;
+            padding: 0 2px !important;
+            margin: 0 !important;
+          }
+
+          #pf-print-root textarea {
+            font-size: 10px !important;
+            line-height: 1.1 !important;
+            min-height: 36px !important;
+            padding: 2px !important;
+            margin: 0 !important;
+          }
+
           .no-print { display: none !important; }
-          .print-wrap { width: 100% !important; margin: 0 auto !important; }
-          .overflow-x-auto { overflow: visible !important; }
-          input, textarea, select { color: #000 !important; }
-          button { display: none !important; }
         }
-      `}</style> */}
-      <style>{`
-  @page { size: A4 landscape; margin: 8mm; }
-
-  @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    /* ✅ HIDE global app header/nav/sidebar/footer (outside this page) */
-header, nav, footer, aside { display: none !important; }
-
-/* common layout classes (add more if your project uses them) */
-.navbar, .topbar, .sidebar, .app-header, .layout-header, .layout-nav {
-  display: none !important;
-}
-
-/* ✅ remove extra page padding/min-height that can push content */
-html, body { margin: 0 !important; padding: 0 !important; height: auto !important; }
-#root { min-height: 0 !important; height: auto !important; }
-
-
-    /* ✅ hide all UI except print root (NO visibility hack) */
-    #pf-page-root > :not(#pf-print-root) { display: none !important; }
-
-    /* remove extra padding/margins in print */
-    #pf-page-root { padding: 0 !important; margin: 0 !important; }
-
-    /* ✅ print root: NOT fixed (so it won't repeat) */
-    #pf-print-root {
-      display: block !important;
-      position: static !important;
-      width: var(--pf-print-width, 100%) !important;
-
-      /* ✅ Chrome-friendly scaling (zoom affects layout so no extra pages) */
-      zoom: var(--pf-print-scale, 1);
-    }
-
-    #pf-print-root .overflow-x-auto { overflow: visible !important; }
-
-    #pf-print-root .pf-cell {
-      overflow: hidden !important;
-      padding: 2px !important;
-    }
-
-    #pf-print-root input,
-    #pf-print-root select {
-      font-size: 10px !important;
-      line-height: 1.1 !important;
-      height: 16px !important;
-      padding: 0 2px !important;
-      margin: 0 !important;
-    }
-
-    #pf-print-root textarea {
-      font-size: 10px !important;
-      line-height: 1.1 !important;
-      min-height: 36px !important;
-      padding: 2px !important;
-      margin: 0 !important;
-    }
-
-    .no-print { display: none !important; }
-  }
-`}</style>
-
+      `}</style>
 
       {/* 🔝 Global logo resize panel */}
       {renderImageSizePanel()}
@@ -3473,14 +3411,10 @@ html, body { margin: 0 !important; padding: 0 !important; height: auto !importan
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
         <div>
           <h1 className="text-lg font-semibold">Fill Form: {formTitle}</h1>
-          <p className="text-xs text-gray-500">
-            Project #{projectId}
-            {formCode ? ` • Code: ${formCode}` : ""}
-            {responseLoading ? " • Loading response..." : ""}
-          </p>
+          {responseLoading && <div className="text-xs text-gray-500 mt-1">Loading saved response...</div>}
         </div>
 
-        <div className="flex items-center gap-3 no-print">
+        <div className="flex flex-wrap items-center gap-2 no-print">
           <button
             type="button"
             onClick={handleExportPdf}
@@ -3489,10 +3423,7 @@ html, body { margin: 0 !important; padding: 0 !important; height: auto !importan
             Export PDF
           </button>
 
-          <button
-            onClick={() => navigate(-1)}
-            className="text-xs text-blue-600 underline"
-          >
+          <button onClick={() => navigate(-1)} className="text-xs text-blue-600 underline">
             ← Back to project forms
           </button>
         </div>
@@ -3503,31 +3434,20 @@ html, body { margin: 0 !important; padding: 0 !important; height: auto !importan
       ) : (
         <>
           <div id="pf-print-root" ref={printRef}>
-  {renderBody()}
-</div>
+            {renderBody()}
+          </div>
 
           {/* 🔥 Forward section (optional) */}
           <div className="mt-4 border-t pt-3 no-print">
-            <h2 className="text-sm font-semibold mb-2">
-              Forward (optional)
-            </h2>
+            <h2 className="text-sm font-semibold mb-2">Forward (optional)</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
               <div>
-                <label className="block mb-1 font-medium">
-                  Project
-                </label>
-                <input
-                  type="text"
-                  className="w-full border rounded px-2 py-1 bg-gray-50"
-                  value={projectId}
-                  readOnly
-                />
+                <label className="block mb-1 font-medium">Project</label>
+                <input type="text" className="w-full border rounded px-2 py-1 bg-gray-50" value={projectId} readOnly />
               </div>
 
               <div>
-                <label className="block mb-1 font-medium">
-                  Forward to user
-                </label>
+                <label className="block mb-1 font-medium">Forward to user</label>
                 <select
                   className="w-full border rounded px-2 py-1 bg-white"
                   value={forwardToUserId}
@@ -3535,9 +3455,7 @@ html, body { margin: 0 !important; padding: 0 !important; height: auto !importan
                   disabled={usersLoading}
                 >
                   <option value="">
-                    {usersLoading
-                      ? "Loading users..."
-                      : "Do not forward (only save)"}
+                    {usersLoading ? "Loading users..." : "Do not forward (only save)"}
                   </option>
                   {projectUsers.map((u) => {
                     const id = u.id ?? u.user_id;
@@ -3554,15 +3472,11 @@ html, body { margin: 0 !important; padding: 0 !important; height: auto !importan
                     );
                   })}
                 </select>
-                <div className="text-[10px] text-gray-500 mt-0.5">
-                  Project ke users yahan aa rahe hain.
-                </div>
+                <div className="text-[10px] text-gray-500 mt-0.5">Project ke users yahan aa rahe hain.</div>
               </div>
 
               <div>
-                <label className="block mb-1 font-medium">
-                  Status with forward
-                </label>
+                <label className="block mb-1 font-medium">Status with forward</label>
                 <select
                   className="w-full border rounded px-2 py-1 bg-white"
                   value={forwardDecision}
@@ -3576,7 +3490,7 @@ html, body { margin: 0 !important; padding: 0 !important; height: auto !importan
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 mt-4 no-print">
+          <div className="flex flex-col sm:flex-row justify-end gap-2 mt-4 no-print">
             <button
               type="button"
               disabled={submitting}

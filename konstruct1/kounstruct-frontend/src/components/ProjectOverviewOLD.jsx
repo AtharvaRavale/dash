@@ -5467,6 +5467,11 @@ const ProjectOverview = () => {
   const [unitStageSummary, setUnitStageSummary] = useState(null);
   const [unitStageLoading, setUnitStageLoading] = useState(false);
   const [unitStageError, setUnitStageError] = useState("");
+  // ✅ Tower-wise stacked chart API
+const [towerSummary, setTowerSummary] = useState(null);
+const [towerLoading, setTowerLoading] = useState(false);
+const [towerError, setTowerError] = useState("");
+
 
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
@@ -5623,6 +5628,54 @@ useEffect(() => {
 
   return () => controller.abort();
 }, [id, globalFilters.stageId, globalFilters.buildingId, globalFilters.flatId]);
+
+// ✅ Fetch Tower-wise stacked chart
+useEffect(() => {
+  if (!id) return;
+
+  const controller = new AbortController();
+
+  const fetchTower = async () => {
+    setTowerLoading(true);
+    setTowerError("");
+
+    try {
+      const params = { project_id: id };
+
+      // keep filters same like donut (safe mapping)
+      if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
+      if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
+      if (globalFilters.flatId) params.unit_id = globalFilters.flatId; // flat == unit
+
+      const res = await axios.get(
+        `${API_BASE}/checklists/api/dashboard/unit-stage-role-summary/by-tower/`,
+        {
+          params,
+          headers: authHeaders(),
+          signal: controller.signal,
+        }
+      );
+
+      setTowerSummary(res.data || null);
+    } catch (err) {
+      const name = err?.name || "";
+      if (name === "CanceledError" || name === "AbortError") return;
+
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to load tower chart.";
+      setTowerError(msg);
+      setTowerSummary(null);
+    } finally {
+      setTowerLoading(false);
+    }
+  };
+
+  fetchTower();
+  return () => controller.abort();
+}, [id, globalFilters.stageId, globalFilters.buildingId, globalFilters.flatId]);
+
 
 
   useEffect(() => {
@@ -6556,6 +6609,59 @@ const unitDonutData = useMemo(() => {
   );
 
   /* ---------------- render ---------------- */
+  const resolveTowerName = (towerObj) => {
+  const tid = towerObj?.tower_id;
+
+  // ✅ tower_id matches building_id → use buildingNameMap (comes from by_project API)
+  const realName =
+    tid != null ? buildingNameMap?.get?.(String(tid)) : null;
+
+  return (
+    realName ||
+    towerObj?.tower_label ||
+    (tid != null ? `Tower #${tid}` : "Tower NA")
+  );
+};
+
+const towerChartData = useMemo(() => {
+  const towers = towerSummary?.towers || [];
+  if (!Array.isArray(towers) || towers.length === 0) return [];
+
+  const rows = towers.map((t) => {
+    const c = t?.counts || {};
+    const row = {
+      tower: resolveTowerName(t),
+
+      pending_yet_to_start: safeNumber(c.pending_yet_to_start),
+      work_in_progress_unit: safeNumber(c.work_in_progress_unit),
+      yet_to_verify: safeNumber(c.yet_to_verify),
+      complete: safeNumber(c.complete),
+    };
+
+    row.total =
+      row.pending_yet_to_start +
+      row.work_in_progress_unit +
+      row.yet_to_verify +
+      row.complete;
+
+    return row;
+  });
+
+  // Optional: sort by total desc
+  rows.sort((a, b) => safeNumber(b.total) - safeNumber(a.total));
+  return rows;
+}, [towerSummary, buildingNameMap]);
+
+
+const towerKeyColor = (k) => {
+  const key = String(k || "").toLowerCase();
+  if (key === "pending_yet_to_start") return CHART_COLORS.danger;
+  if (key === "work_in_progress_unit") return CHART_COLORS.warning;
+  if (key === "yet_to_verify") return CHART_COLORS.secondary;
+  if (key === "complete") return CHART_COLORS.success;
+  return CHART_COLORS.muted;
+};
+
   return (
     <div
       className="min-h-screen"
@@ -6850,26 +6956,85 @@ const unitDonutData = useMemo(() => {
             {/* ✅ 6-grid ONLY: bar, pie, donut, top team performance, role wise workload, role coverage analysis */}
             <div className="grid gap-4 lg:grid-cols-2">
               {/* 1) Bar */}
-              {flatProgressChartData.length > 0 ? (
-                <Card theme={theme} className="p-5">
-                  <div className="text-base font-black mb-3">Flat-wise Progress</div>
-                  <ResponsiveContainer width="100%" height={320}>
-                    <BarChart data={flatProgressChartData} barSize={18}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
-                      <XAxis dataKey="name" stroke={subText} angle={-25} textAnchor="end" height={80} style={{ fontSize: "11px" }} />
-                      <YAxis stroke={subText} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend />
-                      <Bar dataKey="completed" fill={CHART_COLORS.success} name="Completed" label={<BarValueLabel />} />
-                      <Bar dataKey="pending_checker" fill={CHART_COLORS.secondary} name="Pending Checker" label={<BarValueLabel />} />
-                      <Bar dataKey="pending_for_inspector" fill={CHART_COLORS.warning} name="Pending For Checker" label={<BarValueLabel />} />
-                      <Bar dataKey="not_started" fill={CHART_COLORS.danger} name="Not Started" label={<BarValueLabel />} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </Card>
-              ) : (
-                <EmptyChart title="Flat-wise Progress" />
-              )}
+              {/* 1) Tower-wise Progress (Horizontal Stacked like image) */}
+{towerLoading ? (
+  <Card theme={theme} className="p-5">
+    <div className="text-base font-black mb-1">Tower-wise Progress</div>
+    <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+      Loading...
+    </div>
+    <div
+      className="h-[320px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      Loading tower chart...
+    </div>
+  </Card>
+) : towerChartData.length > 0 ? (
+  <Card theme={theme} className="p-5">
+    <div className="text-base font-black mb-3">Tower-wise Progress</div>
+
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={towerChartData} layout="vertical" barSize={16}>
+        <CartesianGrid
+          strokeDasharray="3 3"
+          stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
+        />
+
+        {/* X = counts */}
+        <XAxis type="number" stroke={subText} />
+
+        {/* Y = towers */}
+        <YAxis
+          type="category"
+          dataKey="tower"
+          stroke={subText}
+          width={90}
+          style={{ fontSize: "11px", fontWeight: 800 }}
+        />
+
+        <Tooltip content={<CustomTooltip />} />
+        <Legend />
+
+        {/* stacked series (same keys as API) */}
+        <Bar
+          dataKey="pending_yet_to_start"
+          name="Pending (Yet to Start)"
+          stackId="a"
+          fill={towerKeyColor("pending_yet_to_start")}
+        />
+        <Bar
+          dataKey="work_in_progress_unit"
+          name="Work In Progress"
+          stackId="a"
+          fill={towerKeyColor("work_in_progress_unit")}
+        />
+        <Bar
+          dataKey="yet_to_verify"
+          name="Yet To Verify"
+          stackId="a"
+          fill={towerKeyColor("yet_to_verify")}
+        />
+        <Bar
+          dataKey="complete"
+          name="Complete"
+          stackId="a"
+          fill={towerKeyColor("complete")}
+        />
+      </BarChart>
+    </ResponsiveContainer>
+  </Card>
+) : (
+  <EmptyChart
+    title="Tower-wise Progress"
+    subtitle={towerError || "No tower data for current filters."}
+  />
+)}
+
 
               {/* 2) Pie */}
               {statusPieData.length > 0 ? (

@@ -564,15 +564,15 @@ const resolveLabels = true; // ✅ always ON, no UI toggle
     }}
   >
     <div>
-      <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: secondaryTextColor }}>
+      {/* <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: secondaryTextColor }}>
         Pending Summary
       </div>
       <div className="text-sm font-extrabold" style={{ color: textColor }}>
         Pending from: {widgets?.pending?.pending_from || "-"}
-      </div>
+      </div> */}
     </div>
 
-    <span style={badgeStyles(theme, "neutral")}>
+    {/* <span style={badgeStyles(theme, "neutral")}>
       Total:{" "}
       <b>
         {fmtInt(
@@ -582,10 +582,10 @@ const resolveLabels = true; // ✅ always ON, no UI toggle
             0
         )}
       </b>
-    </span>
+    </span> */}
   </div>
 
-  <div className="overflow-auto">
+  {/* <div className="overflow-auto">
     <table className="min-w-full text-sm">
       <thead
         className="sticky top-0 z-10"
@@ -646,7 +646,7 @@ const resolveLabels = true; // ✅ always ON, no UI toggle
         })}
       </tbody>
     </table>
-  </div>
+  </div> */}
 </div>
 
 
