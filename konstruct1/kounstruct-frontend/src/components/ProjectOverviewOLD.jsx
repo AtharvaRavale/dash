@@ -5472,6 +5472,12 @@ const [towerSummary, setTowerSummary] = useState(null);
 const [towerLoading, setTowerLoading] = useState(false);
 const [towerError, setTowerError] = useState("");
 
+// ✅ TAT + Aging API (Role/User wise)
+const [tatAging, setTatAging] = useState(null);
+const [tatAgingLoading, setTatAgingLoading] = useState(false);
+const [tatAgingError, setTatAgingError] = useState("");
+
+
 
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
@@ -5629,6 +5635,7 @@ useEffect(() => {
   return () => controller.abort();
 }, [id, globalFilters.stageId, globalFilters.buildingId, globalFilters.flatId]);
 
+
 // ✅ Fetch Tower-wise stacked chart
 useEffect(() => {
   if (!id) return;
@@ -5675,6 +5682,63 @@ useEffect(() => {
   fetchTower();
   return () => controller.abort();
 }, [id, globalFilters.stageId, globalFilters.buildingId, globalFilters.flatId]);
+// ✅ Fetch TAT & Aging (Role/User wise)
+useEffect(() => {
+  if (!id) return;
+
+  const controller = new AbortController();
+
+  const fetchTatAging = async () => {
+    setTatAgingLoading(true);
+    setTatAgingError("");
+
+    try {
+      const params = { project_id: id };
+
+      // map global filters to API (safe)
+      if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
+      if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
+      if (globalFilters.flatId) params.unit_id = globalFilters.flatId;
+
+      // ✅ Time window -> from_date (optional)
+      if (globalFilters.timeWindow === "30d" || globalFilters.timeWindow === "7d") {
+        const days = globalFilters.timeWindow === "30d" ? 30 : 7;
+        const d = new Date();
+        d.setDate(d.getDate() - days);
+        params.from_date = d.toISOString().slice(0, 10); // YYYY-MM-DD
+      }
+
+      const res = await axios.get(`${API_BASE}/checklists/dashboard/tat-aging/`, {
+        params,
+        headers: authHeaders(),
+        signal: controller.signal,
+      });
+
+      setTatAging(res.data || null);
+    } catch (err) {
+      const name = err?.name || "";
+      if (name === "CanceledError" || name === "AbortError") return;
+
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to load TAT & Aging.";
+      setTatAgingError(msg);
+      setTatAging(null);
+    } finally {
+      setTatAgingLoading(false);
+    }
+  };
+
+  fetchTatAging();
+  return () => controller.abort();
+}, [
+  id,
+  globalFilters.stageId,
+  globalFilters.buildingId,
+  globalFilters.flatId,
+  globalFilters.timeWindow,
+]);
 
 
 
@@ -6546,6 +6610,153 @@ const unitDonutData = useMemo(() => {
     const n = paretoCategoryData?.length || 0;
     return Math.max(900, n * 90);
   }, [paretoCategoryData]);
+  // ✅ Helpers for Tat/Aging compute
+const numOrNull = (v) => {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isNaN(n) ? null : n;
+};
+
+const paretoStatus = useMemo(
+  () => String(globalFilters.status || "").toLowerCase(),
+  [globalFilters.status]
+);
+
+const paretoBarName = useMemo(
+  () => (paretoStatus === "completed" ? "Completed Questions" : "Pending Questions"),
+  [paretoStatus]
+);
+
+const paretoTopColor = useMemo(
+  () => (paretoStatus === "completed" ? CHART_COLORS.success : CHART_COLORS.danger),
+  [paretoStatus]
+);
+
+const paretoCardTitle = useMemo(
+  () =>
+    paretoStatus === "completed"
+      ? "Pareto Deep (Completed Concentration)"
+      : "Pareto Deep (Pending Concentration)",
+  [paretoStatus]
+);
+
+
+const tatRoleChartData = useMemo(() => {
+  const d = tatAging?.data || {};
+  const roles = [
+    { key: "maker", label: "Maker" },
+    { key: "supervisor", label: "Supervisor" },
+    { key: "checker", label: "Checker" },
+  ];
+
+  const wavg = (rows, valKey, weightKey) => {
+    let num = 0;
+    let den = 0;
+    (rows || []).forEach((r) => {
+      const v = numOrNull(r?.[valKey]);
+      const w = numOrNull(r?.[weightKey]);
+      if (v === null || w === null || w <= 0) return;
+      num += v * w;
+      den += w;
+    });
+    if (!den) return null;
+    return Math.round((num / den) * 100) / 100;
+  };
+
+  const maxVal = (rows, key) => {
+    let mx = null;
+    (rows || []).forEach((r) => {
+      const v = numOrNull(r?.[key]);
+      if (v === null) return;
+      mx = mx === null ? v : Math.max(mx, v);
+    });
+    return mx === null ? null : Math.round(mx * 100) / 100;
+  };
+
+  const sumKey = (rows, key) =>
+    (rows || []).reduce((s, r) => s + safeNumber(r?.[key] || 0), 0);
+
+  return roles.map((rr) => {
+    const rows = Array.isArray(d?.[rr.key]) ? d[rr.key] : [];
+
+    const assigned = sumKey(rows, "assigned");
+    const pending = sumKey(rows, "pending");
+    const completed = sumKey(rows, "completed");
+
+    // ✅ TAT avg -> weighted by completed
+    const avgTat = wavg(rows, "avg_tat_days", "completed");
+
+    // ✅ Aging avg -> weighted by pending
+    const avgAging = wavg(rows, "avg_aging_days", "pending");
+
+    const maxAging = maxVal(rows, "max_aging_days");
+
+    return {
+      role: rr.label,
+      assigned,
+      pending,
+      completed,
+      avg_tat_days: avgTat ?? 0,
+      avg_aging_days: avgAging ?? 0,
+      max_aging_days: maxAging ?? 0,
+      _avg_tat_raw: avgTat,     // tooltip debug
+      _avg_aging_raw: avgAging, // tooltip debug
+      _max_aging_raw: maxAging, // tooltip debug
+    };
+  });
+}, [tatAging]);
+
+const tatBucketChartData = useMemo(() => {
+  const d = tatAging?.data || {};
+  const roles = [
+    { key: "maker", label: "Maker" },
+    { key: "supervisor", label: "Supervisor" },
+    { key: "checker", label: "Checker" },
+  ];
+
+  const sumBucket = (rows, bucketKey) =>
+    (rows || []).reduce((s, r) => s + safeNumber(r?.aging_buckets?.[bucketKey] || 0), 0);
+
+  return roles.map((rr) => {
+    const rows = Array.isArray(d?.[rr.key]) ? d[rr.key] : [];
+    return {
+      role: rr.label,
+      b_0_1d: sumBucket(rows, "0_1d"),
+      b_1_3d: sumBucket(rows, "1_3d"),
+      b_3_7d: sumBucket(rows, "3_7d"),
+      b_7_15d: sumBucket(rows, "7_15d"),
+      b_15p_d: sumBucket(rows, "15p_d"),
+    };
+  });
+}, [tatAging]);
+
+// Optional: Top pending users table (debug + manager view)
+const tatTopUsers = useMemo(() => {
+  const d = tatAging?.data || {};
+  const out = [];
+  const push = (roleKey, arr) => {
+    (arr || []).forEach((r) => {
+      out.push({
+        role: roleKey.toUpperCase(),
+        user_id: r?.user_id ?? null,
+        user_name: r?.user_name || (r?.user_id ? `User #${r.user_id}` : "Unassigned"),
+        pending: safeNumber(r?.pending || 0),
+        completed: safeNumber(r?.completed || 0),
+        assigned: safeNumber(r?.assigned || 0),
+        avg_tat_days: numOrNull(r?.avg_tat_days),
+        avg_aging_days: numOrNull(r?.avg_aging_days),
+        max_aging_days: numOrNull(r?.max_aging_days),
+      });
+    });
+  };
+  push("maker", d.maker);
+  push("supervisor", d.supervisor);
+  push("checker", d.checker);
+
+  out.sort((a, b) => b.pending - a.pending || b.assigned - a.assigned);
+  return out.slice(0, 12);
+}, [tatAging]);
+
 
   const TopValueLabel = ({ x, y, width, value, fill }) => {
     if (!value || value <= 0) return null;
@@ -6892,6 +7103,110 @@ const towerKeyColor = (k) => {
               </div>
             </Card>
 
+
+             {/* ✅ Pareto Block (checkbox multiselect) */}
+            {paretoCategoryData.length > 0 && (
+              <Card theme={theme} className="p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                  <div>
+<div className="text-base font-black">{paretoCardTitle}</div>
+                    <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+                      Category dimension + optional floor / flat focus.
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 w-full lg:w-auto">
+                    <div className="min-w-[220px]">
+                      <Label theme={theme}>Category dimension</Label>
+                      <Select
+                        theme={theme}
+                        className="h-[42px]"
+                        value={paretoFilters.categoryMode}
+                        onChange={(e) => setParetoFilters((p) => ({ ...p, categoryMode: e.target.value }))}
+                      >
+                        {PARETO_CATEGORY_MODES.map((m) => (
+                          <option key={m.value} value={m.value}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+
+                    {globalFilters.buildingId && floorOptions.length > 0 && (
+                      <MultiSelectDropdown
+                        theme={theme}
+                        label="Floors (multi-select)"
+                        options={floorOptions}
+                        value={paretoFilters.floorIds}
+                        onChange={(arr) => setParetoFilters((p) => ({ ...p, floorIds: arr }))}
+                        placeholder="All floors"
+                        className="min-w-[240px]"
+                      />
+                    )}
+
+                    {flatOptions.length > 0 && (
+                      <MultiSelectDropdown
+                        theme={theme}
+                        label="Focus flats (multi-select)"
+                        options={flatOptions}
+                        value={paretoFilters.focusFlatIds}
+                        onChange={(arr) => setParetoFilters((p) => ({ ...p, focusFlatIds: arr }))}
+                        placeholder="All flats"
+                        className="min-w-[260px]"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <div style={{ minWidth: paretoMinWidth }}>
+                    <ResponsiveContainer width="100%" height={460}>
+                      <ComposedChart data={paretoCategoryData} margin={{ top: 20, right: 30, left: 10, bottom: 90 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+                        <XAxis
+                          dataKey="categoryLabel"
+                          stroke={subText}
+                          angle={-30}
+                          textAnchor="end"
+                          height={95}
+                          interval={0}
+                          style={{ fontSize: "11px" }}
+                          tickFormatter={(v) => (String(v).length > 28 ? `${String(v).slice(0, 28)}…` : v)}
+                        />
+                        <YAxis yAxisId="left" stroke={subText} width={55} />
+                        <YAxis
+                          yAxisId="right"
+                          orientation="right"
+                          stroke={subText}
+                          domain={[0, 100]}
+                          tickFormatter={(v) => `${v}%`}
+                          width={50}
+                        />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Legend />
+
+                        <Bar yAxisId="left" dataKey="pending" name={paretoBarName} label={<TopValueLabel />}>
+  {paretoCategoryData.map((entry, idx) => (
+    <Cell key={idx} fill={entry.isTop80 ? paretoTopColor : CHART_COLORS.muted} />
+  ))}
+</Bar>
+
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="cumulativePct"
+                          name="Cumulative %"
+                          stroke={CHART_COLORS.secondary}
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </Card>
+            )}
+
             {/* ✅ 30-Day Velocity FULL WIDTH (complete space) */}
             {velocityChartData.length > 0 ? (
               <Card theme={theme} className="p-5">
@@ -7039,7 +7354,7 @@ const towerKeyColor = (k) => {
               {/* 2) Pie */}
               {statusPieData.length > 0 ? (
                 <Card theme={theme} className="p-5">
-                  <div className="text-base font-black mb-3">Status Distribution</div>
+                  <div className="text-base font-black mb-3">Status Distribution(Questions)</div>
                   <ResponsiveContainer width="100%" height={320}>
                     <PieChart>
                       <Pie
@@ -7156,7 +7471,7 @@ const towerKeyColor = (k) => {
 
 
               {/* 4) Top Team Performance */}
-              {teamPerformanceData.length > 0 ? (
+              {/* {teamPerformanceData.length > 0 ? (
                 <Card theme={theme} className="p-5">
                   <div className="text-base font-black mb-3">Top Team Performance</div>
                   <ResponsiveContainer width="100%" height={320}>
@@ -7173,10 +7488,10 @@ const towerKeyColor = (k) => {
                 </Card>
               ) : (
                 <EmptyChart title="Top Team Performance" />
-              )}
+              )} */}
 
               {/* 5) Role-wise Workload */}
-              {workloadDistributionData.length > 0 ? (
+              {/* {workloadDistributionData.length > 0 ? (
                 <Card theme={theme} className="p-5">
                   <div className="text-base font-black mb-3">Role-wise Workload</div>
                   <ResponsiveContainer width="100%" height={320}>
@@ -7193,10 +7508,10 @@ const towerKeyColor = (k) => {
                 </Card>
               ) : (
                 <EmptyChart title="Role-wise Workload" />
-              )}
+              )} */}
 
               {/* 6) Role Coverage Analysis */}
-              {roleRadarData.length > 0 ? (
+              {/* {roleRadarData.length > 0 ? (
                 <Card theme={theme} className="p-5">
                   <div className="text-base font-black mb-3">Role Coverage Analysis</div>
                   <ResponsiveContainer width="100%" height={320}>
@@ -7218,111 +7533,170 @@ const towerKeyColor = (k) => {
                 </Card>
               ) : (
                 <EmptyChart title="Role Coverage Analysis" />
-              )}
+              )} */}
             </div>
 
-            {/* ✅ Pareto Block (checkbox multiselect) */}
-            {paretoCategoryData.length > 0 && (
-              <Card theme={theme} className="p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-                  <div>
-                    <div className="text-base font-black">Pareto Deep (Pending Concentration)</div>
-                    <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
-                      Category dimension + optional floor / flat focus.
-                    </div>
-                  </div>
+           
+            {/* ✅ TAT & Aging (AFTER Pareto) */}
+{tatAgingLoading ? (
+  <Card theme={theme} className="p-5">
+    <div className="text-base font-black mb-1">TAT & Aging (Role-wise)</div>
+    <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+      Loading...
+    </div>
+    <div
+      className="h-[360px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      Loading TAT/Aging chart...
+    </div>
+  </Card>
+) : tatRoleChartData?.length > 0 ? (
+  <Card theme={theme} className="p-5">
+    <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
+      <div>
+        <div className="text-base font-black">TAT & Aging (Role-wise)</div>
+        <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+          Avg TAT = completed items time • Avg Aging = pending items time • Max Aging = worst pending
+        </div>
+      </div>
+      {tatAgingError ? (
+        <div className="text-xs font-extrabold" style={{ color: CHART_COLORS.danger }}>
+          {tatAgingError}
+        </div>
+      ) : null}
+    </div>
 
-                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 w-full lg:w-auto">
-                    <div className="min-w-[220px]">
-                      <Label theme={theme}>Category dimension</Label>
-                      <Select
-                        theme={theme}
-                        className="h-[42px]"
-                        value={paretoFilters.categoryMode}
-                        onChange={(e) => setParetoFilters((p) => ({ ...p, categoryMode: e.target.value }))}
-                      >
-                        {PARETO_CATEGORY_MODES.map((m) => (
-                          <option key={m.value} value={m.value}>
-                            {m.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
+    <div className="grid gap-4 lg:grid-cols-2">
+      {/* Chart 1: Avg TAT vs Avg Aging + Max Aging */}
+      <div
+        className="rounded-2xl border p-3"
+        style={{
+          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+          background: theme === "dark" ? "rgba(2,6,23,0.28)" : "rgba(248,250,252,0.95)",
+        }}
+      >
+        <div className="text-sm font-black mb-2">Avg TAT vs Avg Aging (Days)</div>
+        <ResponsiveContainer width="100%" height={320}>
+          <ComposedChart data={tatRoleChartData}>
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
+            />
+            <XAxis dataKey="role" stroke={subText} />
+            <YAxis stroke={subText} />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend />
+            <Bar
+              dataKey="avg_tat_days"
+              name="Avg TAT (days)"
+              fill={CHART_COLORS.primary}
+            />
+            <Bar
+              dataKey="avg_aging_days"
+              name="Avg Aging (days)"
+              fill={CHART_COLORS.warning}
+            />
+            <Line
+              type="monotone"
+              dataKey="max_aging_days"
+              name="Max Aging (days)"
+              stroke={CHART_COLORS.danger}
+              strokeWidth={2}
+              dot={false}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
 
-                    {globalFilters.buildingId && floorOptions.length > 0 && (
-                      <MultiSelectDropdown
-                        theme={theme}
-                        label="Floors (multi-select)"
-                        options={floorOptions}
-                        value={paretoFilters.floorIds}
-                        onChange={(arr) => setParetoFilters((p) => ({ ...p, floorIds: arr }))}
-                        placeholder="All floors"
-                        className="min-w-[240px]"
-                      />
-                    )}
+        <div className="mt-2 grid grid-cols-3 gap-2 text-xs font-semibold" style={{ color: subText }}>
+          {tatRoleChartData.map((r) => (
+            <div key={r.role} className="rounded-xl border px-3 py-2"
+              style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+              <div className="font-black" style={{ color: textColor }}>{r.role}</div>
+              <div>Assigned: {fmtInt(r.assigned)}</div>
+              <div>Pending: {fmtInt(r.pending)}</div>
+              <div>Completed: {fmtInt(r.completed)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
 
-                    {flatOptions.length > 0 && (
-                      <MultiSelectDropdown
-                        theme={theme}
-                        label="Focus flats (multi-select)"
-                        options={flatOptions}
-                        value={paretoFilters.focusFlatIds}
-                        onChange={(arr) => setParetoFilters((p) => ({ ...p, focusFlatIds: arr }))}
-                        placeholder="All flats"
-                        className="min-w-[260px]"
-                      />
-                    )}
-                  </div>
-                </div>
+      {/* Chart 2: Aging buckets by role */}
+      <div
+        className="rounded-2xl border p-3"
+        style={{
+          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+          background: theme === "dark" ? "rgba(2,6,23,0.28)" : "rgba(248,250,252,0.95)",
+        }}
+      >
+        <div className="text-sm font-black mb-2">Pending Aging Buckets (Counts)</div>
 
-                <div className="overflow-x-auto">
-                  <div style={{ minWidth: paretoMinWidth }}>
-                    <ResponsiveContainer width="100%" height={460}>
-                      <ComposedChart data={paretoCategoryData} margin={{ top: 20, right: 30, left: 10, bottom: 90 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
-                        <XAxis
-                          dataKey="categoryLabel"
-                          stroke={subText}
-                          angle={-30}
-                          textAnchor="end"
-                          height={95}
-                          interval={0}
-                          style={{ fontSize: "11px" }}
-                          tickFormatter={(v) => (String(v).length > 28 ? `${String(v).slice(0, 28)}…` : v)}
-                        />
-                        <YAxis yAxisId="left" stroke={subText} width={55} />
-                        <YAxis
-                          yAxisId="right"
-                          orientation="right"
-                          stroke={subText}
-                          domain={[0, 100]}
-                          tickFormatter={(v) => `${v}%`}
-                          width={50}
-                        />
-                        <Tooltip content={<CustomTooltip />} />
-                        <Legend />
+        <ResponsiveContainer width="100%" height={320}>
+          <BarChart data={tatBucketChartData}>
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
+            />
+            <XAxis dataKey="role" stroke={subText} />
+            <YAxis stroke={subText} />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend />
+            <Bar dataKey="b_0_1d" name="0-1d" stackId="a" fill={CHART_COLORS.success} />
+            <Bar dataKey="b_1_3d" name="1-3d" stackId="a" fill={CHART_COLORS.secondary} />
+            <Bar dataKey="b_3_7d" name="3-7d" stackId="a" fill={CHART_COLORS.warning} />
+            <Bar dataKey="b_7_15d" name="7-15d" stackId="a" fill={CHART_COLORS.danger} />
+            <Bar dataKey="b_15p_d" name="15+d" stackId="a" fill={CHART_COLORS.muted} />
+          </BarChart>
+        </ResponsiveContainer>
 
-                        <Bar yAxisId="left" dataKey="pending" name="Pending Items" label={<TopValueLabel />}>
-                          {paretoCategoryData.map((entry, idx) => (
-                            <Cell key={idx} fill={entry.isTop80 ? CHART_COLORS.danger : CHART_COLORS.muted} />
-                          ))}
-                        </Bar>
+        {/* Optional: Top users table */}
+        {tatTopUsers?.length > 0 && (
+          <div className="mt-3 overflow-auto">
+            <div className="text-sm font-black mb-2">Top Pending Users</div>
+            <table className="min-w-full text-xs">
+              <thead style={{ background: theme === "dark" ? "rgba(2,6,23,0.55)" : "#f1f5f9" }}>
+                <tr>
+                  <th className="text-left px-3 py-2 font-black">Role</th>
+                  <th className="text-left px-3 py-2 font-black">User</th>
+                  <th className="text-right px-3 py-2 font-black">Pending</th>
+                  <th className="text-right px-3 py-2 font-black">Avg Aging</th>
+                  <th className="text-right px-3 py-2 font-black">Max Aging</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tatTopUsers.map((r, idx) => (
+                  <tr key={idx} className="border-t" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+                    <td className="px-3 py-2 font-extrabold">{r.role}</td>
+                    <td className="px-3 py-2 font-semibold" style={{ color: subText }}>
+                      {r.user_name}
+                    </td>
+                    <td className="px-3 py-2 text-right font-black">{fmtInt(r.pending)}</td>
+                    <td className="px-3 py-2 text-right font-black">
+                      {r.avg_aging_days == null ? "-" : r.avg_aging_days.toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-black">
+                      {r.max_aging_days == null ? "-" : r.max_aging_days.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  </Card>
+) : (
+  <EmptyChart
+    title="TAT & Aging (Role-wise)"
+    subtitle={tatAgingError || "No TAT/Aging data for current filters."}
+  />
+)}
 
-                        <Line
-                          yAxisId="right"
-                          type="monotone"
-                          dataKey="cumulativePct"
-                          name="Cumulative %"
-                          stroke={CHART_COLORS.secondary}
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </Card>
-            )}
 
             {/* Detailed Item View */}
             <Card theme={theme} className="overflow-hidden">

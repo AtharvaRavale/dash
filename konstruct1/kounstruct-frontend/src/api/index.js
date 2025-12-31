@@ -1731,6 +1731,99 @@ export function createMIRFull(formData) {
 }
 
 
+// ✅ MIR PDF export (server generated) with route fallbacks
+// ✅ MIR PDF export (server generated) with route fallbacks
+export const exportMIRPdf = async (mirId, includeAttachments = true) => {
+  const token =
+    localStorage.getItem("ACCESS_TOKEN") ||
+    localStorage.getItem("access") ||
+    localStorage.getItem("accessToken") ||
+    "";
+
+  const root = __getApiRoot();
+  const qs = `?include_attachments=${includeAttachments ? 1 : 0}`;
+
+  const baseUrls = [
+    `${root}/users/mir/${mirId}/export-pdf/`,
+    `${root}/api/mir/${mirId}/export-pdf/`,
+    `/mir/${mirId}/export-pdf/`,
+    `${root}/users/mir/${mirId}/export_pdf/`,
+    `${root}/api/mir/${mirId}/export_pdf/`,
+    `/mir/${mirId}/export_pdf/`,
+  ];
+
+  // ✅ append query to each
+  const urls = baseUrls.map((u) => `${u}${qs}`);
+
+  const res = await __getBlobWithFallback(axiosInstance, urls, {
+    responseType: "blob",
+    headers: token
+      ? { Authorization: `Bearer ${token}`, Accept: "application/pdf" }
+      : { Accept: "application/pdf" },
+  });
+
+  const contentType = res.headers?.["content-type"] || "";
+  if (contentType.includes("application/json")) {
+    const text = await res.data.text();
+    let msg = "MIR PDF export failed";
+    try {
+      const j = JSON.parse(text);
+      msg = j?.detail || j?.message || msg;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  const dispo = res.headers?.["content-disposition"];
+  const filename = filenameFromDisposition(dispo) || `MIR_${mirId}.pdf`;
+
+  downloadBlob(res.data, filename);
+  return true;
+};
+
+// export const exportMIRPdf = async (mirId) => {
+//   const token =
+//     localStorage.getItem("ACCESS_TOKEN") ||
+//     localStorage.getItem("access") ||
+//     localStorage.getItem("accessToken") ||
+//     "";
+
+//   const root = __getApiRoot();
+
+//   // ✅ try multiple possible routes (because baseURL can be /users or /api)
+//   const urls = [
+//     `${root}/users/mir/${mirId}/export-pdf/`,
+//     `${root}/api/mir/${mirId}/export-pdf/`,
+//     `/mir/${mirId}/export-pdf/`,
+
+//     // (optional fallback if someone used underscore in backend)
+//     `${root}/users/mir/${mirId}/export_pdf/`,
+//     `${root}/api/mir/${mirId}/export_pdf/`,
+//     `/mir/${mirId}/export_pdf/`,
+//   ];
+
+//   const res = await __getBlobWithFallback(axiosInstance, urls, {
+//     responseType: "blob",
+//     headers: token ? { Authorization: `Bearer ${token}`, Accept: "application/pdf" } : { Accept: "application/pdf" },
+//   });
+
+//   // ✅ If backend returns JSON error inside blob
+//   const contentType = res.headers?.["content-type"] || "";
+//   if (contentType.includes("application/json")) {
+//     const text = await res.data.text();
+//     let msg = "MIR PDF export failed";
+//     try {
+//       const j = JSON.parse(text);
+//       msg = j?.detail || j?.message || msg;
+//     } catch {}
+//     throw new Error(msg);
+//   }
+
+//   const dispo = res.headers?.["content-disposition"];
+//   const filename = filenameFromDisposition(dispo) || `MIR_${mirId}.pdf`;
+
+//   downloadBlob(res.data, filename);
+//   return true;
+// };
 
 
 

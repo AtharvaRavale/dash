@@ -185,6 +185,28 @@ const Card = ({ theme, title, subtitle, children }) => {
     </div>
   );
 };
+const normalizePendingBucket = (v) => {
+  // supports:
+  // 1) number: 0
+  // 2) object: {count, percent, total}
+  if (v === null || v === undefined) return { count: 0, percent: null, total: null };
+
+  if (typeof v === "number") return { count: safeNumber(v, 0), percent: null, total: null };
+
+  // numeric string like "12"
+  const maybeNum = Number(String(v).trim());
+  if (Number.isFinite(maybeNum)) return { count: safeNumber(maybeNum, 0), percent: null, total: null };
+
+  if (typeof v === "object") {
+    return {
+      count: safeNumber(v?.count ?? 0, 0),
+      percent: v?.percent === null || v?.percent === undefined ? null : safeNumber(v.percent, 0),
+      total: v?.total === null || v?.total === undefined ? null : safeNumber(v.total, 0),
+    };
+  }
+
+  return { count: 0, percent: null, total: null };
+};
 
 /* ---------- Logs Modal (inline, no extra files) ---------- */
 function LogsModal({
@@ -555,99 +577,111 @@ const resolveLabels = true; // ✅ always ON, no UI toggle
             <>
               {/* widgets cards */}
              {/* ✅ Pending summary (table) */}
-<div className="rounded-3xl border overflow-hidden mb-6" style={{ borderColor, background: cardBg }}>
-  <div
-    className="px-6 py-4 border-b flex items-center justify-between gap-3"
-    style={{
-      borderColor,
-      background: theme === "dark" ? "rgba(2,6,23,0.55)" : "rgba(249,250,251,1)",
-    }}
-  >
-    <div>
-      {/* <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: secondaryTextColor }}>
-        Pending Summary
-      </div>
-      <div className="text-sm font-extrabold" style={{ color: textColor }}>
-        Pending from: {widgets?.pending?.pending_from || "-"}
-      </div> */}
-    </div>
+{/* ✅ Pending summary (table) */}
+{(() => {
+  const pending = widgets?.pending || {};
+  const pendingFrom = pending?.pending_from ? String(pending.pending_from) : "-";
 
-    {/* <span style={badgeStyles(theme, "neutral")}>
-      Total:{" "}
-      <b>
-        {fmtInt(
-          widgets?.pending?.maker_pending_items?.total ??
-            widgets?.pending?.initializer_pending_items?.total ??
-            widgets?.pending?.checker_pending_items?.total ??
-            0
-        )}
-      </b>
-    </span> */}
-  </div>
+  const rows = [
+    { label: "Initializer Pending", key: "initializer_pending_items" },
+    { label: "Maker Pending", key: "maker_pending_items" },
+    { label: "Checker Pending", key: "checker_pending_items" },
+  ].map((r) => {
+    const obj = normalizePendingBucket(pending?.[r.key]);
+    return { ...r, ...obj };
+  });
 
-  {/* <div className="overflow-auto">
-    <table className="min-w-full text-sm">
-      <thead
-        className="sticky top-0 z-10"
-        style={{ background: theme === "dark" ? "#020617" : "#e5e7eb" }}
+  const showPercent = rows.some((r) => r.percent !== null);
+  const showTotal = rows.some((r) => r.total !== null);
+
+  // if totals not provided, show sum of counts
+  const totalCount = rows.reduce((s, r) => s + safeNumber(r.count, 0), 0);
+  const headerTotal = showTotal
+    ? rows.reduce((s, r) => s + safeNumber(r.total, 0), 0)
+    : totalCount;
+
+  return (
+    <div className="rounded-3xl border overflow-hidden mb-6" style={{ borderColor, background: cardBg }}>
+      <div
+        className="px-6 py-4 border-b flex items-center justify-between gap-3"
+        style={{
+          borderColor,
+          background: theme === "dark" ? "rgba(2,6,23,0.55)" : "rgba(249,250,251,1)",
+        }}
       >
-        <tr>
-          <th className="text-left px-6 py-3 text-xs font-bold" style={{ color: textColor }}>
-            Bucket
-          </th>
-          <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: textColor }}>
-            Count
-          </th>
-          <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: textColor }}>
-            Percent
-          </th>
-          <th className="text-right px-6 py-3 text-xs font-bold" style={{ color: textColor }}>
-            Total
-          </th>
-        </tr>
-      </thead>
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: secondaryTextColor }}>
+            Pending Summary
+          </div>
+          <div className="text-sm font-extrabold" style={{ color: textColor }}>
+            Pending from: {pendingFrom}
+          </div>
+        </div>
 
-      <tbody>
-        {[
-          { label: "Initializer Pending", obj: widgets?.pending?.initializer_pending_items },
-          { label: "Maker Pending", obj: widgets?.pending?.maker_pending_items },
-          { label: "Checker Pending", obj: widgets?.pending?.checker_pending_items },
-        ].map((row, idx) => {
-          const o = row?.obj || {};
-          const count = safeNumber(o?.count, 0);
-          const percent = safeNumber(o?.percent, 0);
-          const total = safeNumber(o?.total, 0);
+        <span style={badgeStyles(theme, "neutral")}>
+          Total: <b>{fmtInt(headerTotal)}</b>
+        </span>
+      </div>
 
-          return (
-            <tr
-              key={idx}
-              className="border-t"
-              style={{ borderColor: theme === "dark" ? "#0b1220" : "#e5e7eb" }}
-            >
-              <td className="px-6 py-3">
-                <div className="font-semibold" style={{ color: textColor }}>
-                  {row.label}
-                </div>
-              </td>
-
-              <td className="px-4 py-3 text-right font-black tabular-nums" style={{ color: textColor }}>
-                {fmtInt(count)}
-              </td>
-
-              <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: textColor }}>
-                {percent.toFixed(2)}%
-              </td>
-
-              <td className="px-6 py-3 text-right font-bold tabular-nums" style={{ color: textColor }}>
-                {fmtInt(total)}
-              </td>
+      <div className="overflow-auto">
+        <table className="min-w-full text-sm">
+          <thead className="sticky top-0 z-10" style={{ background: theme === "dark" ? "#020617" : "#e5e7eb" }}>
+            <tr>
+              <th className="text-left px-6 py-3 text-xs font-bold" style={{ color: textColor }}>
+                Bucket
+              </th>
+              <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: textColor }}>
+                Count
+              </th>
+              {showPercent ? (
+                <th className="text-right px-4 py-3 text-xs font-bold" style={{ color: textColor }}>
+                  Percent
+                </th>
+              ) : null}
+              {showTotal ? (
+                <th className="text-right px-6 py-3 text-xs font-bold" style={{ color: textColor }}>
+                  Total
+                </th>
+              ) : null}
             </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  </div> */}
-</div>
+          </thead>
+
+          <tbody>
+            {rows.map((r, idx) => (
+              <tr
+                key={idx}
+                className="border-t"
+                style={{ borderColor: theme === "dark" ? "#0b1220" : "#e5e7eb" }}
+              >
+                <td className="px-6 py-3">
+                  <div className="font-semibold" style={{ color: textColor }}>
+                    {r.label}
+                  </div>
+                </td>
+
+                <td className="px-4 py-3 text-right font-black tabular-nums" style={{ color: textColor }}>
+                  {fmtInt(r.count)}
+                </td>
+
+                {showPercent ? (
+                  <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: textColor }}>
+                    {r.percent === null ? "—" : `${safeNumber(r.percent, 0).toFixed(2)}%`}
+                  </td>
+                ) : null}
+
+                {showTotal ? (
+                  <td className="px-6 py-3 text-right font-bold tabular-nums" style={{ color: textColor }}>
+                    {r.total === null ? "—" : fmtInt(r.total)}
+                  </td>
+                ) : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+})()}
 
 
               {/* tree tables */}
