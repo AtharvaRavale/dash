@@ -5249,6 +5249,14 @@ const CHART_COLORS = {
   danger: "#dc2626",
   muted: "#94a3b8",
 };
+const FLATS_SUMMARY_COLORS = {
+  total: CHART_COLORS.danger,        // red
+  initiated: CHART_COLORS.warning,   // orange
+  snag: "#eab308",                   // yellow
+  desnag: CHART_COLORS.success,      // green
+  pendingForSnag: "#f59e0b",         // yellow/orange shade
+  yetToStart: CHART_COLORS.muted,    // optional (if you ever show it)
+};
 
 const Card = ({ theme, children, className = "" }) => (
   <div
@@ -5492,17 +5500,28 @@ const [tatAgingError, setTatAgingError] = useState("");
 
   const [viewMode, setViewMode] = useState("head");
 
+  // const [globalFilters, setGlobalFilters] = useState({
+  //   buildingId: "",
+  //   floorId: "",
+  //   flatId: "",
+  //   stageId: "",
+  //   status: "",
+  //   role: "",
+  //   flatCategory: "",
+  //   roomCategory: "",
+  //   timeWindow: "all",
+  // });
   const [globalFilters, setGlobalFilters] = useState({
-    buildingId: "",
-    floorId: "",
-    flatId: "",
-    stageId: "",
-    status: "",
-    role: "",
-    flatCategory: "",
-    roomCategory: "",
-    timeWindow: "all",
-  });
+  buildingId: "",
+  floorId: "",
+  flatId: "",
+  stageId: "",
+  status: "",
+  flatCategory: "",
+  roomCategory: "",
+  timeWindow: "all",
+});
+
 
   const [paretoFilters, setParetoFilters] = useState({
     categoryMode: "checklist",
@@ -6027,41 +6046,41 @@ useEffect(() => {
   const filteredItemsGlobal = useMemo(() => {
     const items = Array.isArray(stats?.items) ? stats.items : [];
     const {
-      buildingId,
-      floorId,
-      flatId,
-      stageId,
-      status,
-      role,
-      flatCategory,
-      roomCategory,
-      timeWindow,
-    } = globalFilters;
+  buildingId,
+  floorId,
+  flatId,
+  stageId,
+  status,
+  flatCategory,
+  roomCategory,
+  timeWindow,
+} = globalFilters;
 
-    if (
-      !status &&
-      !role &&
-      !stageId &&
-      !buildingId &&
-      !floorId &&
-      !flatId &&
-      !flatCategory &&
-      !roomCategory &&
-      timeWindow === "all"
-    ) {
-      return items;
-    }
+
+   if (
+  !status &&
+  !stageId &&
+  !buildingId &&
+  !floorId &&
+  !flatId &&
+  !flatCategory &&
+  !roomCategory &&
+  timeWindow === "all"
+) {
+  return items;
+}
+
 
     const now = new Date();
 
     return items.filter((item) => {
       if (status && !matchesStatusFilter(item, status)) return false;
 
-      if (role) {
-        const rolesObj = item.roles || {};
-        const block = rolesObj[role.toLowerCase()];
-        if (!block || !block.user_id) return false;
-      }
+      // if (role) {
+      //   const rolesObj = item.roles || {};
+      //   const block = rolesObj[role.toLowerCase()];
+      //   if (!block || !block.user_id) return false;
+      // }
 
       if (stageId) {
         const sId = item.checklist?.stage_id;
@@ -6119,27 +6138,27 @@ useEffect(() => {
 
   const filtersActive = useMemo(() => {
     const {
-      buildingId,
-      floorId,
-      flatId,
-      stageId,
-      status,
-      role,
-      flatCategory,
-      roomCategory,
-      timeWindow,
-    } = globalFilters;
-    return (
-      !!buildingId ||
-      !!floorId ||
-      !!flatId ||
-      !!stageId ||
-      !!status ||
-      !!role ||
-      !!flatCategory ||
-      !!roomCategory ||
-      timeWindow !== "all"
-    );
+  buildingId,
+  floorId,
+  flatId,
+  stageId,
+  status,
+  flatCategory,
+  roomCategory,
+  timeWindow,
+} = globalFilters;
+
+return (
+  !!buildingId ||
+  !!floorId ||
+  !!flatId ||
+  !!stageId ||
+  !!status ||
+  !!flatCategory ||
+  !!roomCategory ||
+  timeWindow !== "all"
+);
+
   }, [globalFilters]);
 
   const workingItems = useMemo(() => {
@@ -6191,11 +6210,11 @@ useEffect(() => {
     return items.filter((item) => {
       if (gf.status && !matchesStatusFilter(item, gf.status)) return false;
 
-      if (gf.role) {
-        const rolesObj = item.roles || {};
-        const block = rolesObj[gf.role.toLowerCase()];
-        if (!block || !block.user_id) return false;
-      }
+      // if (gf.role) {
+      //   const rolesObj = item.roles || {};
+      //   const block = rolesObj[gf.role.toLowerCase()];
+      //   if (!block || !block.user_id) return false;
+      // }
 
       if (gf.stageId) {
         const sId = item.checklist?.stage_id;
@@ -6534,77 +6553,152 @@ const unitDonutData = useMemo(() => {
       .filter((d) => d.coverage > 0);
   }, [visibleRoleKeys, roleStatsObj]);
 
-  const paretoCategoryData = useMemo(() => {
-    if (!workingItems || !workingItems.length) return [];
+  // ✅ WIP-only source for Pareto (from by-tower API)
+const wipItemsForPareto = useMemo(() => {
+  return towerSummary?.work_in_progress_detail?.items || [];
+}, [towerSummary]);
 
-    const selectedStatus = String(globalFilters.status || "").toLowerCase();
-    const selectedStageId = globalFilters.stageId || null;
-    const selectedBuildingId = globalFilters.buildingId || null;
-    const selectedFloorIds = paretoFilters.floorIds || [];
-    const selectedFlatIds = paretoFilters.focusFlatIds || [];
-    const categoryMode = paretoFilters.categoryMode || "checklist";
+const wipUnitIdSet = useMemo(() => {
+  const ids = towerSummary?.work_in_progress_detail?.wip_unit_ids || [];
+  return new Set(ids.map(String));
+}, [towerSummary]);
 
-    const rowsMap = {};
-    workingItems.forEach((item) => {
-      const status = (item.item_status || "").toLowerCase();
+// ✅ Optional: limit Pareto "Focus flats" dropdown to only WIP flats
+const wipFlatOptions = useMemo(() => {
+  if (!wipUnitIdSet.size) return [];
+  return (flatOptions || []).filter((o) => wipUnitIdSet.has(String(o.id)));
+}, [flatOptions, wipUnitIdSet]);
 
-      if (selectedStatus) {
-        if (!matchesStatusFilter(item, selectedStatus)) return;
-      } else {
-        const pendingKeys = ["pending_checker", "pending_for_inspector", "not_started"];
-        if (!pendingKeys.includes(status)) return;
-      }
+const paretoCategoryData = useMemo(() => {
+  const items = Array.isArray(wipItemsForPareto) ? wipItemsForPareto : [];
+  if (!items.length) return [];
 
-      if (selectedStageId) {
-        const sId = item.checklist?.stage_id;
-        if (!sId || String(sId) !== String(selectedStageId)) return;
-      }
+  const selectedStatus = String(globalFilters.status || "").toLowerCase();
+  const selectedFloorIds = paretoFilters.floorIds || [];
+  const selectedFlatIds = paretoFilters.focusFlatIds || [];
+  const categoryMode = paretoFilters.categoryMode || "checklist";
 
-      if (selectedBuildingId) {
-        const bId = item.location?.building_id;
-        if (!bId || String(bId) !== String(selectedBuildingId)) return;
-      }
+  const rowsMap = {};
 
-      if (selectedFloorIds.length) {
-        const flatId = item.location?.flat_id;
-        const meta = flatId ? flatLookup[flatId] : null;
-        const lid = meta?.levelId ? String(meta.levelId) : null;
-        if (!lid || !selectedFloorIds.includes(lid)) return;
-      }
+  items.forEach((item) => {
+    const st = String(item?.item_status || "").toLowerCase();
 
-      if (selectedFlatIds.length) {
-        const fId = item.location?.flat_id;
-        if (!fId || !selectedFlatIds.includes(String(fId))) return;
-      }
+    // ✅ Status behavior:
+    // - If user selected a status, respect it.
+    // - Else default to "pending inside WIP" (i.e. exclude completed).
+    if (selectedStatus) {
+      if (!matchesStatusFilter(item, selectedStatus)) return;
+    } else {
+      if (st === "completed") return;
+    }
 
-      const label = getParetoCategoryLabel(item, flatLookup, categoryMode);
-      const key = label;
+    // ✅ Floor filter (uses flatLookup like before)
+    if (selectedFloorIds.length) {
+      const flatId = item?.location?.flat_id;
+      const meta = flatId ? flatLookup?.[flatId] : null;
+      const lid = meta?.levelId ? String(meta.levelId) : null;
+      if (!lid || !selectedFloorIds.includes(lid)) return;
+    }
 
-      if (!rowsMap[key]) rowsMap[key] = { categoryLabel: label, pending: 0 };
-      rowsMap[key].pending += 1;
-    });
+    // ✅ Focus flats filter
+    if (selectedFlatIds.length) {
+      const fId = item?.location?.flat_id;
+      if (!fId || !selectedFlatIds.includes(String(fId))) return;
+    }
 
-    let rows = Object.values(rowsMap).filter((r) => r.pending > 0);
-    if (!rows.length) return [];
+    const label = getParetoCategoryLabel(item, flatLookup, categoryMode);
+    const key = String(label || "Other");
 
-    rows.sort((a, b) => b.pending - a.pending);
+    if (!rowsMap[key]) rowsMap[key] = { categoryLabel: key, pending: 0 };
+    rowsMap[key].pending += 1;
+  });
 
-    const totalPending = rows.reduce((sum, r) => sum + r.pending, 0) || 1;
-    let running = 0;
+  let rows = Object.values(rowsMap).filter((r) => r.pending > 0);
+  if (!rows.length) return [];
 
-    return rows.map((r) => {
-      running += r.pending;
-      const cumulativePct = Math.round((running / totalPending) * 100);
-      return { ...r, cumulativePct, isTop80: cumulativePct <= 80 };
-    });
-  }, [
-    workingItems,
-    globalFilters.status,
-    globalFilters.stageId,
-    globalFilters.buildingId,
-    paretoFilters,
-    flatLookup,
-  ]);
+  rows.sort((a, b) => b.pending - a.pending);
+
+  const total = rows.reduce((sum, r) => sum + r.pending, 0) || 1;
+  let running = 0;
+
+  return rows.map((r) => {
+    running += r.pending;
+    const cumulativePct = Math.round((running / total) * 100);
+    return { ...r, cumulativePct, isTop80: cumulativePct <= 80 };
+  });
+}, [wipItemsForPareto, globalFilters.status, paretoFilters, flatLookup]);
+
+  // const paretoCategoryData = useMemo(() => {
+  //   if (!workingItems || !workingItems.length) return [];
+
+  //   const selectedStatus = String(globalFilters.status || "").toLowerCase();
+  //   const selectedStageId = globalFilters.stageId || null;
+  //   const selectedBuildingId = globalFilters.buildingId || null;
+  //   const selectedFloorIds = paretoFilters.floorIds || [];
+  //   const selectedFlatIds = paretoFilters.focusFlatIds || [];
+  //   const categoryMode = paretoFilters.categoryMode || "checklist";
+
+  //   const rowsMap = {};
+  //   workingItems.forEach((item) => {
+  //     const status = (item.item_status || "").toLowerCase();
+
+  //     if (selectedStatus) {
+  //       if (!matchesStatusFilter(item, selectedStatus)) return;
+  //     } else {
+  //       const pendingKeys = ["pending_checker", "pending_for_inspector", "not_started"];
+  //       if (!pendingKeys.includes(status)) return;
+  //     }
+
+  //     if (selectedStageId) {
+  //       const sId = item.checklist?.stage_id;
+  //       if (!sId || String(sId) !== String(selectedStageId)) return;
+  //     }
+
+  //     if (selectedBuildingId) {
+  //       const bId = item.location?.building_id;
+  //       if (!bId || String(bId) !== String(selectedBuildingId)) return;
+  //     }
+
+  //     if (selectedFloorIds.length) {
+  //       const flatId = item.location?.flat_id;
+  //       const meta = flatId ? flatLookup[flatId] : null;
+  //       const lid = meta?.levelId ? String(meta.levelId) : null;
+  //       if (!lid || !selectedFloorIds.includes(lid)) return;
+  //     }
+
+  //     if (selectedFlatIds.length) {
+  //       const fId = item.location?.flat_id;
+  //       if (!fId || !selectedFlatIds.includes(String(fId))) return;
+  //     }
+
+  //     const label = getParetoCategoryLabel(item, flatLookup, categoryMode);
+  //     const key = label;
+
+  //     if (!rowsMap[key]) rowsMap[key] = { categoryLabel: label, pending: 0 };
+  //     rowsMap[key].pending += 1;
+  //   });
+
+  //   let rows = Object.values(rowsMap).filter((r) => r.pending > 0);
+  //   if (!rows.length) return [];
+
+  //   rows.sort((a, b) => b.pending - a.pending);
+
+  //   const totalPending = rows.reduce((sum, r) => sum + r.pending, 0) || 1;
+  //   let running = 0;
+
+  //   return rows.map((r) => {
+  //     running += r.pending;
+  //     const cumulativePct = Math.round((running / totalPending) * 100);
+  //     return { ...r, cumulativePct, isTop80: cumulativePct <= 80 };
+  //   });
+  // }, [
+  //   workingItems,
+  //   globalFilters.status,
+  //   globalFilters.stageId,
+  //   globalFilters.buildingId,
+  //   paretoFilters,
+  //   flatLookup,
+  // ]);
 
   const paretoMinWidth = useMemo(() => {
     const n = paretoCategoryData?.length || 0;
@@ -6622,24 +6716,24 @@ const paretoStatus = useMemo(
   [globalFilters.status]
 );
 
-const paretoBarName = useMemo(
-  () => (paretoStatus === "completed" ? "Completed Questions" : "Pending Questions"),
-  [paretoStatus]
-);
+const paretoBarName = useMemo(() => {
+  if (!paretoStatus) return "Pending Questions (Snags only)";
+  if (paretoStatus === "completed") return "Completed Questions (Snags only)";
+  if (paretoStatus === "started") return "Started Questions (Snags only)";
+  return `${titleCaseStatus(paretoStatus)} Questions (Snags only)`;
+}, [paretoStatus]);
 
 const paretoTopColor = useMemo(
   () => (paretoStatus === "completed" ? CHART_COLORS.success : CHART_COLORS.danger),
   [paretoStatus]
 );
 
-const paretoCardTitle = useMemo(
-  () =>
-    paretoStatus === "completed"
-      ? "Pareto Deep (Completed Concentration)"
-      : "Pareto Deep (Pending Concentration)",
-  [paretoStatus]
-);
-
+const paretoCardTitle = useMemo(() => {
+  if (!paretoStatus) return "Pareto Deep (Snags • Pending )";
+  if (paretoStatus === "completed") return "Pareto Deep (Snags • Completed )";
+  if (paretoStatus === "started") return "Pareto Deep (Snags • Started )";
+  return `Pareto Deep (Snags • ${titleCaseStatus(paretoStatus)} )`;
+}, [paretoStatus]);
 
 const tatRoleChartData = useMemo(() => {
   const d = tatAging?.data || {};
@@ -6872,6 +6966,66 @@ const towerKeyColor = (k) => {
   if (key === "complete") return CHART_COLORS.success;
   return CHART_COLORS.muted;
 };
+// ✅ Flats Summary (same as screenshot) — uses by-tower API totals
+// ✅ Flats Summary (same as screenshot) — uses by-tower API counts
+const flatsSummaryTotals =
+  towerSummary?.counts || towerSummary?.towers?.[0]?.counts || {};
+
+const flatsSummaryStats = useMemo(() => {
+  return {
+    total: safeNumber(flatsSummaryTotals.total_units),
+    initiated: safeNumber(flatsSummaryTotals.initialised_unit_count),
+    snag: safeNumber(flatsSummaryTotals.work_in_progress_unit),
+    desnag: safeNumber(flatsSummaryTotals.complete),
+    pendingForSnag: safeNumber(flatsSummaryTotals.yet_to_verify),
+    yetToStart: safeNumber(flatsSummaryTotals.pending_yet_to_start),
+  };
+}, [towerSummary]);
+
+const flatsSummaryChartData = useMemo(() => {
+  return [
+    { key: "total", name: "Total\nflats", value: flatsSummaryStats.total, color: FLATS_SUMMARY_COLORS.total },
+    { key: "initiated", name: "Initiated", value: flatsSummaryStats.initiated, color: FLATS_SUMMARY_COLORS.initiated },
+    { key: "pendingForSnag", name: "Pending\nfor snag", value: flatsSummaryStats.pendingForSnag, color: FLATS_SUMMARY_COLORS.pendingForSnag },
+    { key: "snag", name: "Snag\nflats", value: flatsSummaryStats.snag, color: FLATS_SUMMARY_COLORS.snag },
+    { key: "desnag", name: "Desnag", value: flatsSummaryStats.desnag, color: FLATS_SUMMARY_COLORS.desnag },
+  ];
+}, [flatsSummaryStats]);
+
+
+// const flatsSummaryChartData = useMemo(() => {
+//   return [
+//     { name: "Total\nflats", value: flatsSummaryStats.total },
+//     { name: "Initiated", value: flatsSummaryStats.initiated },
+//     { name: "Pending\nfor snag", value: flatsSummaryStats.pendingForSnag },
+//     { name: "Snag\nflats", value: flatsSummaryStats.snag },
+//     { name: "Desnag", value: flatsSummaryStats.desnag },
+//   ];
+// }, [flatsSummaryStats]);
+
+// X-axis tick that supports \n line breaks (like your image labels)
+const MultiLineTick = ({ x, y, payload }) => {
+  const lines = String(payload?.value || "").split("\n");
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text
+        x={0}
+        y={0}
+        dy={16}
+        textAnchor="middle"
+        fill={subText}
+        style={{ fontSize: "11px", fontWeight: 800 }}
+      >
+        {lines.map((l, i) => (
+          <tspan key={i} x="0" dy={i === 0 ? 0 : 12}>
+            {l}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
+};
+
 
   return (
     <div
@@ -6915,17 +7069,17 @@ const towerKeyColor = (k) => {
                 <button
                   type="button"
                   onClick={() =>
-                    setGlobalFilters({
-                      buildingId: "",
-                      floorId: "",
-                      flatId: "",
-                      stageId: "",
-                      status: "",
-                      role: "",
-                      flatCategory: "",
-                      roomCategory: "",
-                      timeWindow: "all",
-                    })
+                   setGlobalFilters({
+  buildingId: "",
+  floorId: "",
+  flatId: "",
+  stageId: "",
+  status: "",
+  flatCategory: "",
+  roomCategory: "",
+  timeWindow: "all",
+})
+
                   }
                   className="h-[42px] px-4 rounded-xl text-sm font-black border"
                   style={{
@@ -6957,7 +7111,7 @@ const towerKeyColor = (k) => {
                   </Select>
                 </div>
 
-                <div>
+                {/* <div>
                   <Label theme={theme}>Role touch</Label>
                   <Select
                     theme={theme}
@@ -6970,7 +7124,7 @@ const towerKeyColor = (k) => {
                     <option value="supervisor">Supervisor</option>
                     <option value="checker">Checker</option>
                   </Select>
-                </div>
+                </div> */}
 
                 <div>
                   <Label theme={theme}>Stage</Label>
@@ -7102,6 +7256,92 @@ const towerKeyColor = (k) => {
                 </div>
               </div>
             </Card>
+            {/* ✅ Flats Summary (like screenshot) */}
+{towerLoading ? (
+  <Card theme={theme} className="p-5">
+    <div className="text-base font-black mb-1">Flats Summary</div>
+    <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+      Loading...
+    </div>
+    <div
+      className="h-[320px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      Loading flats summary...
+    </div>
+  </Card>
+) : safeNumber(flatsSummaryStats.total) > 0 ? (
+  <Card theme={theme} className="p-5">
+    <div className="flex items-start justify-between gap-3 mb-2">
+      <div>
+        <div className="text-base font-black">Flats Summary</div>
+
+        <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+          {globalFilters.buildingId
+            ? `Building: ${
+                buildingNameMap.get(String(globalFilters.buildingId)) ||
+                `Building #${globalFilters.buildingId}`
+              }`
+            : "All Buildings"}
+          {` • Yet to start: ${fmtInt(flatsSummaryStats.yetToStart)}`}
+        </div>
+      </div>
+
+      {/* right side info box (same as screenshot) */}
+      <div
+        className="text-xs font-semibold rounded-xl border px-3 py-2 whitespace-nowrap"
+        style={{
+          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+          background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+          color: textColor,
+        }}
+      >
+<div style={{ color: FLATS_SUMMARY_COLORS.total, fontWeight: 900 }}>
+  Total flats: {fmtInt(flatsSummaryStats.total)}
+</div>
+<div style={{ color: FLATS_SUMMARY_COLORS.initiated, fontWeight: 900 }}>
+  Initiated: {fmtInt(flatsSummaryStats.initiated)}
+</div>
+<div style={{ color: FLATS_SUMMARY_COLORS.snag, fontWeight: 900 }}>
+  Snag flats: {fmtInt(flatsSummaryStats.snag)}
+</div>
+<div style={{ color: FLATS_SUMMARY_COLORS.desnag, fontWeight: 900 }}>
+  Desnag: {fmtInt(flatsSummaryStats.desnag)}
+</div>
+
+<div style={{ color: FLATS_SUMMARY_COLORS.pendingForSnag, fontWeight: 900 }}>
+  Pending for snag: {fmtInt(flatsSummaryStats.pendingForSnag)}
+</div>
+      </div>
+    </div>
+
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={flatsSummaryChartData} margin={{ top: 20, right: 20, left: 10, bottom: 40 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+        <XAxis dataKey="name" stroke={subText} interval={0} height={60} tick={<MultiLineTick />} />
+        <YAxis stroke={subText} allowDecimals={false} />
+        <Tooltip content={<CustomTooltip />} />
+        {/* <Bar dataKey="value" name="Flats" fill={CHART_COLORS.primary} label={<TopValueLabel />} /> */}
+        <Bar dataKey="value" name="Flats" label={<TopValueLabel />}>
+  {(flatsSummaryChartData || []).map((entry, idx) => (
+    <Cell key={`cell-${idx}`} fill={entry.color} />
+  ))}
+</Bar>
+
+      </BarChart>
+    </ResponsiveContainer>
+  </Card>
+) : (
+  <EmptyChart
+    title="Flats Summary"
+    subtitle={towerError || "No flats summary data for current filters."}
+  />
+)}
+
 
 
              {/* ✅ Pareto Block (checkbox multiselect) */}
@@ -7144,17 +7384,18 @@ const towerKeyColor = (k) => {
                       />
                     )}
 
-                    {flatOptions.length > 0 && (
-                      <MultiSelectDropdown
-                        theme={theme}
-                        label="Focus flats (multi-select)"
-                        options={flatOptions}
-                        value={paretoFilters.focusFlatIds}
-                        onChange={(arr) => setParetoFilters((p) => ({ ...p, focusFlatIds: arr }))}
-                        placeholder="All flats"
-                        className="min-w-[260px]"
-                      />
-                    )}
+                   {(wipFlatOptions.length > 0 || flatOptions.length > 0) && (
+  <MultiSelectDropdown
+    theme={theme}
+    label="Snag flats"
+    options={wipFlatOptions.length > 0 ? wipFlatOptions : flatOptions}
+    value={paretoFilters.focusFlatIds}
+    onChange={(arr) => setParetoFilters((p) => ({ ...p, focusFlatIds: arr }))}
+    placeholder="All SNAG flats"
+    className="min-w-[260px]"
+  />
+)}
+
                   </div>
                 </div>
 
