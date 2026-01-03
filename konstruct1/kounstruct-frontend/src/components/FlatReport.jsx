@@ -881,6 +881,354 @@ const resolveLabels = true; // ✅ always ON, no UI toggle
   );
 }
 
+
+/* ---------- Category Questions Modal (inline) ---------- */
+/* ---------- Category Questions Modal (enhanced) ---------- */
+function CategoryQuestionsModal({
+  open,
+  onClose,
+  theme,
+  title,
+  subtitle,
+  loading,
+  error,
+  questions,
+  onRetry,
+}) {
+  const textColor = theme === "dark" ? "#f1f5f9" : "#0f172a";
+  const secondaryTextColor = theme === "dark" ? "#94a3b8" : "#64748b";
+  const cardBg = theme === "dark" ? "rgba(15,23,42,0.96)" : "rgba(255,255,255,0.98)";
+  const borderColor = theme === "dark" ? "#475569" : "#cbd5e1";
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all"); // all | open | closed | rejected | other
+
+  // Reset controls when opening
+  useEffect(() => {
+    if (!open) return;
+    setSearch("");
+    setStatusFilter("all");
+  }, [open]);
+
+  // ESC close
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  const normalized = useMemo(() => {
+    const arr = Array.isArray(questions) ? questions : [];
+    return arr.map((q) => {
+      const stRaw = q?.item_status || q?.latest_submission_status || "";
+      const stText = stRaw ? String(stRaw).replaceAll("_", " ") : "—";
+      const kind = statusKind(stRaw); // ok | warn | bad | neutral
+      return { ...q, __stRaw: stRaw, __stText: stText, __kind: kind };
+    });
+  }, [questions]);
+
+  const stats = useMemo(() => {
+    const total = normalized.length;
+    const openCount = normalized.filter((x) => x.__kind === "warn").length;
+    const closedCount = normalized.filter((x) => x.__kind === "ok").length;
+    const rejectedCount = normalized.filter((x) => x.__kind === "bad").length;
+    return { total, openCount, closedCount, rejectedCount };
+  }, [normalized]);
+
+  const filtered = useMemo(() => {
+    const q = String(search || "").trim().toLowerCase();
+
+    const passText = (x) => {
+      if (!q) return true;
+      const hay = [
+        x?.item_title,
+        x?.__stText,
+        x?.item_id,
+        x?.checklist_id,
+        x?.latest_submission_status,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    };
+
+    const passStatus = (x) => {
+      if (statusFilter === "all") return true;
+      if (statusFilter === "open") return x.__kind === "warn";
+      if (statusFilter === "closed") return x.__kind === "ok";
+      if (statusFilter === "rejected") return x.__kind === "bad";
+      if (statusFilter === "other") return x.__kind === "neutral";
+      return true;
+    };
+
+    return normalized.filter((x) => passText(x) && passStatus(x));
+  }, [normalized, search, statusFilter]);
+
+  if (!open) return null;
+
+  const chip = (active) => ({
+    border: `1px solid ${
+      theme === "dark" ? "rgba(148,163,184,0.25)" : "rgba(15,23,42,0.10)"
+    }`,
+    background: active
+      ? theme === "dark"
+        ? "rgba(30,64,175,0.35)"
+        : "rgba(219,234,254,0.95)"
+      : theme === "dark"
+      ? "rgba(2,6,23,0.35)"
+      : "rgba(255,255,255,0.9)",
+    color: textColor,
+  });
+
+  return (
+    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
+      {/* backdrop */}
+      <div
+        className="absolute inset-0"
+        style={{ background: "rgba(0,0,0,0.60)" }}
+        onClick={onClose}
+      />
+
+      {/* modal */}
+      <div
+        className="relative w-full max-w-[1100px] rounded-3xl border overflow-hidden flex flex-col shadow-2xl"
+        style={{ background: cardBg, borderColor, maxHeight: "92vh" }}
+        role="dialog"
+        aria-modal="true"
+      >
+        {/* header */}
+        <div
+          className="px-6 py-4 border-b"
+          style={{
+            borderColor,
+            background: theme === "dark" ? "rgba(2,6,23,0.65)" : "rgba(249,250,251,1)",
+          }}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: secondaryTextColor }}>
+                Category Questions
+              </div>
+
+              <div className="mt-1 text-xl font-black truncate" style={{ color: textColor }}>
+                {title || "Questions"}
+              </div>
+
+              {subtitle ? (
+                <div className="mt-1 text-sm font-semibold truncate" style={{ color: secondaryTextColor }}>
+                  {subtitle}
+                </div>
+              ) : null}
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span style={badgeStyles(theme, "neutral")}>
+                  Total: <b>{fmtInt(stats.total)}</b>
+                </span>
+                <span style={badgeStyles(theme, "warn")}>
+                  Open: <b>{fmtInt(stats.openCount)}</b>
+                </span>
+                <span style={badgeStyles(theme, "ok")}>
+                  Closed: <b>{fmtInt(stats.closedCount)}</b>
+                </span>
+                {stats.rejectedCount ? (
+                  <span style={badgeStyles(theme, "bad")}>
+                    Rejected: <b>{fmtInt(stats.rejectedCount)}</b>
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center w-10 h-10 rounded-2xl border text-lg font-black shrink-0"
+              style={{ borderColor, color: textColor }}
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* toolbar */}
+        <div className="px-6 py-4 border-b" style={{ borderColor }}>
+          <div className="grid gap-3 md:grid-cols-12 items-end">
+            <div className="md:col-span-7">
+              <div className="text-[11px] font-bold uppercase tracking-wide mb-1" style={{ color: secondaryTextColor }}>
+                Search
+              </div>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by question name..."
+                className="w-full rounded-2xl border px-4 py-2 text-sm outline-none"
+                style={{
+                  borderColor,
+                  background: theme === "dark" ? "rgba(2,6,23,0.45)" : "white",
+                  color: textColor,
+                }}
+              />
+              <div className="mt-2 text-[11px] font-semibold" style={{ color: secondaryTextColor }}>
+                Showing <b>{fmtInt(filtered.length)}</b> of <b>{fmtInt(stats.total)}</b>
+              </div>
+            </div>
+
+            <div className="md:col-span-5">
+              <div className="text-[11px] font-bold uppercase tracking-wide mb-1" style={{ color: secondaryTextColor }}>
+                Filter
+              </div>
+
+              <div className="flex flex-wrap gap-2 justify-start md:justify-end">
+                {[
+                  { k: "all", label: "All" },
+                  { k: "open", label: "Open" },
+                  { k: "closed", label: "Closed" },
+                  { k: "rejected", label: "Rejected" },
+                  { k: "other", label: "Other" },
+                ].map((x) => (
+                  <button
+                    key={x.k}
+                    type="button"
+                    onClick={() => setStatusFilter(x.k)}
+                    className="px-3 py-1.5 rounded-full text-[11px] font-extrabold"
+                    style={chip(statusFilter === x.k)}
+                  >
+                    {x.label}
+                  </button>
+                ))}
+
+                {onRetry ? (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="px-3 py-1.5 rounded-full text-[11px] font-extrabold border"
+                    style={{ borderColor, color: textColor }}
+                    title="Reload questions"
+                  >
+                    Retry
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* body */}
+        <div className="p-6 overflow-auto" style={{ background: cardBg }}>
+          {loading ? (
+            <div className="py-12 text-center">
+              <div className="mb-4 inline-block">
+                <div
+                  className="w-10 h-10 rounded-full border-4 border-t-transparent animate-spin"
+                  style={{
+                    borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+                    borderTopColor: "transparent",
+                  }}
+                />
+              </div>
+              <div className="text-sm font-semibold" style={{ color: secondaryTextColor }}>
+                Loading questions...
+              </div>
+            </div>
+          ) : error ? (
+            <div
+              className="rounded-3xl border px-6 py-5 backdrop-blur-xl"
+              style={{
+                background: theme === "dark" ? "rgba(127,29,29,0.35)" : "rgba(254,226,226,0.9)",
+                borderColor: "#ef4444",
+              }}
+            >
+              <div className="text-sm font-semibold mb-1" style={{ color: theme === "dark" ? "#fecaca" : "#991b1b" }}>
+                {error}
+              </div>
+              <div className="text-xs" style={{ color: secondaryTextColor }}>
+                Check backend params / permissions.
+              </div>
+            </div>
+          ) : !filtered.length ? (
+            <div className="rounded-3xl border p-8 text-center" style={{ borderColor }}>
+              <div className="text-sm font-semibold" style={{ color: secondaryTextColor }}>
+                No questions found for the current filter/search.
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-auto rounded-2xl border" style={{ borderColor }}>
+  <table className="min-w-[820px] w-full text-sm">
+    <thead
+      className="sticky top-0 z-10"
+      style={{ background: theme === "dark" ? "#020617" : "#e5e7eb" }}
+    >
+      <tr>
+        <th className="text-left px-4 py-3 text-xs font-bold" style={{ color: textColor }}>
+          Question
+        </th>
+        <th className="text-left px-4 py-3 text-xs font-bold" style={{ color: textColor }}>
+          Status
+        </th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {filtered.map((q, i) => (
+        <tr
+          key={`${q?.item_id || "x"}-${i}`}
+          className="border-t hover:opacity-95"
+          style={{
+            borderColor: theme === "dark" ? "#0b1220" : "#e5e7eb",
+            background:
+              theme === "dark"
+                ? i % 2 === 0
+                  ? "rgba(2,6,23,0.15)"
+                  : "transparent"
+                : i % 2 === 0
+                ? "rgba(15,23,42,0.02)"
+                : "transparent",
+          }}
+        >
+          <td className="px-4 py-3">
+            <div className="font-semibold" style={{ color: textColor }}>
+              {q?.item_title || "-"}
+            </div>
+          </td>
+
+          <td className="px-4 py-3">
+            <span style={badgeStyles(theme, q.__kind)}>
+              {q.__stText}
+            </span>
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+
+          )}
+        </div>
+
+        {/* footer */}
+        <div className="px-6 py-4 border-t flex items-center justify-between" style={{ borderColor }}>
+          <div className="text-[11px] font-semibold" style={{ color: secondaryTextColor }}>
+            Tip: Use search + filters to quickly audit the category.
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-2xl border text-sm font-black"
+            style={{ borderColor, color: textColor }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FlatReport() {
   const { id: projectId, flatId } = useParams();
   const navigate = useNavigate();
@@ -901,6 +1249,77 @@ export default function FlatReport() {
 
   // ✅ Logs modal
   const [logsOpen, setLogsOpen] = useState(false);
+
+    // ✅ Category Questions modal
+  const [qOpen, setQOpen] = useState(false);
+  const [qLoading, setQLoading] = useState(false);
+  const [qError, setQError] = useState("");
+  const [qQuestions, setQQuestions] = useState([]);
+  const [qSel, setQSel] = useState({
+    roomId: "",
+    roomLabel: "",
+    categoryId: "",
+    categoryLabel: "",
+    count: 0,
+  });
+
+  const fetchCategoryQuestions = async (sel) => {
+    if (!sel?.roomId || !sel?.categoryId) return;
+
+    setQLoading(true);
+    setQError("");
+    setQQuestions([]);
+
+    try {
+      const params = {
+        project_id: projectId,
+        flat_id: flatId,
+
+        // keep same filters from overview (optional)
+        ...(filtersFromOverview?.stageId ? { stage_id: filtersFromOverview.stageId } : {}),
+        ...(filtersFromOverview?.buildingId ? { building_id: filtersFromOverview.buildingId } : {}),
+
+        // ✅ important filters
+        room_id: sel.roomId,
+        category: sel.categoryId,
+
+        // ✅ get questions
+        include_questions: "true",
+      };
+
+      const res = await axios.get(`${API_BASE}/checklists/stats/flat-room/`, {
+        params,
+        headers: authHeaders(),
+      });
+
+      const roomsArr = Array.isArray(res?.data?.rooms) ? res.data.rooms : [];
+      const firstRoom = roomsArr[0] || {};
+      const byCat = Array.isArray(firstRoom?.by_category) ? firstRoom.by_category : [];
+
+      const catRow =
+        byCat.find((x) => normId(x?.category_id) === normId(sel.categoryId)) || byCat[0] || {};
+
+      const qs = Array.isArray(catRow?.questions) ? catRow.questions : [];
+      setQQuestions(qs);
+    } catch (e) {
+      const msg =
+        e?.response?.data?.detail ||
+        e?.response?.data?.message ||
+        "Unable to load questions for this category.";
+      setQError(msg);
+      toast.error(msg);
+    } finally {
+      setQLoading(false);
+    }
+  };
+
+  // auto fetch when modal opens / selection changes
+  useEffect(() => {
+    if (!qOpen) return;
+    fetchCategoryQuestions(qSel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qOpen, qSel?.roomId, qSel?.categoryId]);
+
 
   const projectFromState = location.state?.project || null;
   const flatMeta = location.state?.flatMeta || null;
@@ -1139,6 +1558,20 @@ export default function FlatReport() {
         flatId={flatId}
         filtersFromOverview={filtersFromOverview}
       />
+
+
+            <CategoryQuestionsModal
+        open={qOpen}
+        onClose={() => setQOpen(false)}
+        theme={theme}
+        title={`${qSel.categoryLabel || "Category"} • ${fmtInt(qSel.count || 0)}`}
+        subtitle={`${qSel.roomLabel || ""}`}
+        loading={qLoading}
+        error={qError}
+        questions={qQuestions}
+        onRetry={() => fetchCategoryQuestions(qSel)}
+      />
+
 
       <div className="mx-auto max-w-[1200px] px-4 md:px-8 py-8">
         {/* Header */}
@@ -1417,28 +1850,61 @@ export default function FlatReport() {
                                 const label = getCategoryLabel(cat);
                                 const count = safeNumber(cat.count || 0, 0);
                                 const cid = cat?.category_id || String(cidx);
+return (
+  <button
+    type="button"
+    onClick={() => {
+      if (!rid || !cid) return;
+      setQSel({
+        roomId: rid,
+        roomLabel,
+        categoryId: cid,
+        categoryLabel: label,
+        count,
+      });
+      setQOpen(true);
+    }}
+    className="px-2.5 py-1 rounded-full text-[11px] font-semibold hover:opacity-90 active:opacity-80"
+    style={{
+      background:
+        theme === "dark"
+          ? "rgba(30,64,175,0.35)"
+          : "rgba(219,234,254,0.9)",
+      color: textColor,
+      border: `1px solid ${
+        theme === "dark"
+          ? "rgba(148,163,184,0.25)"
+          : "rgba(15,23,42,0.08)"
+      }`,
+      cursor: "pointer",
+    }}
+    title={cid ? `Click to view questions ` : "Click to view questions"}
+  >
+    {label} • {fmtInt(count)}
+  </button>
+);
 
-                                return (
-                                  <span
-                                    key={`${key}-${cid}-${cidx}`}
-                                    className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                                    style={{
-                                      background:
-                                        theme === "dark"
-                                          ? "rgba(30,64,175,0.35)"
-                                          : "rgba(219,234,254,0.9)",
-                                      color: textColor,
-                                      border: `1px solid ${
-                                        theme === "dark"
-                                          ? "rgba(148,163,184,0.25)"
-                                          : "rgba(15,23,42,0.08)"
-                                      }`,
-                                    }}
-                                    title={cid ? `Category ID: ${cid}` : ""}
-                                  >
-                                    {label} • {fmtInt(count)}
-                                  </span>
-                                );
+                                // return (
+                                //   <span
+                                //     key={`${key}-${cid}-${cidx}`}
+                                //     className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                                //     style={{
+                                //       background:
+                                //         theme === "dark"
+                                //           ? "rgba(30,64,175,0.35)"
+                                //           : "rgba(219,234,254,0.9)",
+                                //       color: textColor,
+                                //       border: `1px solid ${
+                                //         theme === "dark"
+                                //           ? "rgba(148,163,184,0.25)"
+                                //           : "rgba(15,23,42,0.08)"
+                                //       }`,
+                                //     }}
+                                //     title={cid ? `Category ID: ${cid}` : ""}
+                                //   >
+                                //     {label} • {fmtInt(count)}
+                                //   </span>
+                                // );
                               })}
                             </div>
                           </td>

@@ -4762,7 +4762,9 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+   LabelList,
 } from "recharts";
+import { Download } from "lucide-react";
 
 const API_BASE = "https://konstruct.world";
 
@@ -5487,6 +5489,171 @@ const [tatAgingError, setTatAgingError] = useState("");
 
 
 
+// ✅ Flats Summary Drilldown
+const flatsSummaryRef = useRef(null);
+
+const [flatsDrill, setFlatsDrill] = useState({
+  mode: "summary",     // "summary" | "detail"
+  bucketKey: null,     // API bucket like "work_in_progress"
+  bucketLabel: "",
+  loading: false,
+  error: "",
+  units: [],           // chart-ready rows
+});
+
+// Summary-bar key -> API bucket mapping
+const FLATS_BUCKET_MAP = {
+  total: null,                 // total ka detail usually nahi hota
+  initiated: "initialised",    // if backend supports
+  pendingForSnag: "yet_to_verify",
+  snag: "work_in_progress",
+  desnag: "complete",
+  yetToStart: "pending_yet_to_start",
+};
+
+const FLATS_BUCKET_LABEL = {
+  initialised: "Initiated Flats",
+  yet_to_verify: "Pending For Snag",
+  work_in_progress: "Snag Flats",
+  complete: "Desnag (Complete)",
+  pending_yet_to_start: "Yet To Start",
+};
+
+const extractDetailUnits = (apiData, bucketKey) => {
+  // expected: `${bucketKey}_detail` e.g. work_in_progress_detail
+  const block = apiData?.[`${bucketKey}_detail`];
+  const units = Array.isArray(block?.units) ? block.units : [];
+
+  // convert to chart rows
+  return units.map((u) => {
+    const us = u?.unit_summary || {};
+    const uid = u?.unit_id || us?.unit_id;
+    return {
+      unit_id: uid,
+      unit_label: flatLabel(uid),
+      total_items: safeNumber(us.total_items),
+      not_started: safeNumber(us.not_started),
+      maker_pending: safeNumber(us.maker_side_pending),
+      checker_pending: safeNumber(us.checker_pending),
+      completed: safeNumber(us.completed),
+      pending_from: us.pending_from || "",
+    };
+  });
+};
+
+
+const fetchFlatsBucketDetail = async (bucketKey) => {
+  if (!bucketKey) return;
+
+  setFlatsDrill((p) => ({
+    ...p,
+    mode: "detail",
+    bucketKey,
+    bucketLabel: FLATS_BUCKET_LABEL[bucketKey] || bucketKey,
+    loading: true,
+    error: "",
+    units: [],
+  }));
+
+  try {
+    const params = { project_id: id };
+
+    // keep same filters as chart
+    if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
+    if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
+
+    // ✅ request detail for clicked bucket
+    // backend supports "detail_buckets" (seen in meta)
+    params.detail_buckets = bucketKey;
+
+    const res = await axios.get(
+      `${API_BASE}/checklists/api/dashboard/unit-stage-role-summary/by-tower/`,
+      { params, headers: authHeaders() }
+    );
+
+    const rows = extractDetailUnits(res.data, bucketKey);
+
+    if (!rows.length) {
+      setFlatsDrill((p) => ({
+        ...p,
+        loading: false,
+        error: "No detail available for this bar (bucket).",
+        units: [],
+      }));
+      return;
+    }
+
+    setFlatsDrill((p) => ({
+      ...p,
+      loading: false,
+      units: rows,
+      error: "",
+    }));
+  } catch (e) {
+    const msg =
+      e?.response?.data?.detail ||
+      e?.response?.data?.message ||
+      "Failed to load flats detail.";
+    setFlatsDrill((p) => ({ ...p, loading: false, error: msg, units: [] }));
+  }
+};
+
+const onFlatsSummaryBarClick = (barPayload) => {
+  // barPayload: { key: "snag" ... }
+  const summaryKey = barPayload?.key;
+  const bucketKey = FLATS_BUCKET_MAP[summaryKey];
+
+  // total pe click ignore or you can show list of flats if you want
+  if (!bucketKey) return;
+
+  fetchFlatsBucketDetail(bucketKey);
+};
+
+const resetFlatsDrill = () => {
+  setFlatsDrill({
+    mode: "summary",
+    bucketKey: null,
+    bucketLabel: "",
+    loading: false,
+    error: "",
+    units: [],
+  });
+};
+
+// ✅ Simple "Export PDF" (print this chart only)
+const handleFlatsSummaryExportPDF = () => {
+  const node = flatsSummaryRef.current;
+  if (!node) return;
+
+  const win = window.open("", "PRINT", "height=700,width=1100");
+  if (!win) return;
+
+  win.document.write(`
+    <html>
+      <head>
+        <title>Flats Summary</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 16px; }
+          .wrap { width: 100%; }
+          @page { size: A4 landscape; margin: 12mm; }
+        </style>
+      </head>
+      <body>
+        <div class="wrap">
+          ${node.innerHTML}
+        </div>
+      </body>
+    </html>
+  `);
+
+  win.document.close();
+  win.focus();
+  win.print();
+  win.close();
+};
+
+
+
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [userMap, setUserMap] = useState({});
@@ -5655,6 +5822,9 @@ useEffect(() => {
 }, [id, globalFilters.stageId, globalFilters.buildingId, globalFilters.flatId]);
 
 
+
+// ✅ Fetch Tower-wise stacked chart
+
 // ✅ Fetch Tower-wise stacked chart
 useEffect(() => {
   if (!id) return;
@@ -5668,18 +5838,16 @@ useEffect(() => {
     try {
       const params = { project_id: id };
 
-      // keep filters same like donut (safe mapping)
       if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
       if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
-      if (globalFilters.flatId) params.unit_id = globalFilters.flatId; // flat == unit
+      if (globalFilters.flatId) params.unit_id = globalFilters.flatId;
+
+      // ✅ ADD THIS: so API returns work_in_progress_detail + wip_unit_ids
+      params.detail_buckets = "work_in_progress";
 
       const res = await axios.get(
         `${API_BASE}/checklists/api/dashboard/unit-stage-role-summary/by-tower/`,
-        {
-          params,
-          headers: authHeaders(),
-          signal: controller.signal,
-        }
+        { params, headers: authHeaders(), signal: controller.signal }
       );
 
       setTowerSummary(res.data || null);
@@ -5701,6 +5869,54 @@ useEffect(() => {
   fetchTower();
   return () => controller.abort();
 }, [id, globalFilters.stageId, globalFilters.buildingId, globalFilters.flatId]);
+
+// useEffect(() => {
+//   if (!id) return;
+
+//   const controller = new AbortController();
+
+//   const fetchTower = async () => {
+//     setTowerLoading(true);
+//     setTowerError("");
+
+//     try {
+//       const params = { project_id: id };
+
+//       // keep filters same like donut (safe mapping)
+//       if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
+//       if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
+//       if (globalFilters.flatId) params.unit_id = globalFilters.flatId; // flat == unit
+
+//       const res = await axios.get(
+//         `${API_BASE}/checklists/api/dashboard/unit-stage-role-summary/by-tower/`,
+//         {
+//           params,
+//           headers: authHeaders(),
+//           signal: controller.signal,
+//         }
+//       );
+
+//       setTowerSummary(res.data || null);
+//     } catch (err) {
+//       const name = err?.name || "";
+//       if (name === "CanceledError" || name === "AbortError") return;
+
+//       const msg =
+//         err?.response?.data?.detail ||
+//         err?.response?.data?.message ||
+//         "Failed to load tower chart.";
+//       setTowerError(msg);
+//       setTowerSummary(null);
+//     } finally {
+//       setTowerLoading(false);
+//     }
+//   };
+
+//   fetchTower();
+//   return () => controller.abort();
+// }, [id, globalFilters.stageId, globalFilters.buildingId, globalFilters.flatId]);
+
+
 // ✅ Fetch TAT & Aging (Role/User wise)
 useEffect(() => {
   if (!id) return;
@@ -5718,6 +5934,8 @@ useEffect(() => {
       if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
       if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
       if (globalFilters.flatId) params.unit_id = globalFilters.flatId;
+
+      params.detail_buckets = "work_in_progress";
 
       // ✅ Time window -> from_date (optional)
       if (globalFilters.timeWindow === "30d" || globalFilters.timeWindow === "7d") {
@@ -6513,12 +6731,12 @@ const unitDonutData = useMemo(() => {
       color: CHART_COLORS.danger,
     },
     {
-      name: "Work In Progress",
+      name: "Snag Flats",
       value: safeNumber(unitCounts.work_in_progress_unit),
       color: CHART_COLORS.warning,
     },
     {
-      name: "Yet to Verify",
+      name: "Pending for snag",
       value: safeNumber(unitCounts.yet_to_verify),
       color: CHART_COLORS.secondary,
     },
@@ -6557,17 +6775,96 @@ const unitDonutData = useMemo(() => {
 const wipItemsForPareto = useMemo(() => {
   return towerSummary?.work_in_progress_detail?.items || [];
 }, [towerSummary]);
-
 const wipUnitIdSet = useMemo(() => {
-  const ids = towerSummary?.work_in_progress_detail?.wip_unit_ids || [];
-  return new Set(ids.map(String));
+  let ids = towerSummary?.work_in_progress_detail?.wip_unit_ids;
+
+  // fallback: derive from units list if backend didn't send wip_unit_ids
+  if (!Array.isArray(ids) || !ids.length) {
+    const units = towerSummary?.work_in_progress_detail?.units || [];
+    ids = (units || [])
+      .map((u) => u?.unit_id || u?.unit_summary?.unit_id)
+      .filter(Boolean);
+  }
+
+  return new Set((ids || []).map(String));
 }, [towerSummary]);
+
+
+
+const wipFloorIdSet = useMemo(() => {
+  const s = new Set();
+  if (!wipUnitIdSet?.size) return s;
+
+  wipUnitIdSet.forEach((fid) => {
+    const meta = flatLookup?.[fid];
+    if (meta?.levelId) s.add(String(meta.levelId));
+  });
+
+  return s;
+}, [wipUnitIdSet, flatLookup]);
+
+const wipFloorOptions = useMemo(() => {
+  const opts = floorOptions || [];
+  if (!opts.length || !wipFloorIdSet.size) return [];
+  return opts.filter((f) => wipFloorIdSet.has(String(f.id)));
+}, [floorOptions, wipFloorIdSet]);
+
+
+// const wipUnitIdSet = useMemo(() => {
+//   const ids = towerSummary?.work_in_progress_detail?.wip_unit_ids || [];
+//   return new Set(ids.map(String));
+// }, [towerSummary]);
+// useEffect(() => {
+//   setParetoFilters((p) => ({
+//     ...p,
+//     focusFlatIds: (p.focusFlatIds || []).filter((fid) => wipUnitIdSet.has(String(fid))),
+//   }));
+// }, [wipUnitIdSet]);
+
+useEffect(() => {
+  setParetoFilters((p) => ({
+    ...p,
+    floorIds: (p.floorIds || []).filter((fid) => wipFloorIdSet.has(String(fid))),
+  }));
+}, [wipFloorIdSet]);
+
+
+useEffect(() => {
+  setParetoFilters((p) => ({
+    ...p,
+    focusFlatIds: (p.focusFlatIds || []).filter((fid) => wipUnitIdSet.has(String(fid))),
+  }));
+}, [wipUnitIdSet]);
+
+
 
 // ✅ Optional: limit Pareto "Focus flats" dropdown to only WIP flats
 const wipFlatOptions = useMemo(() => {
-  if (!wipUnitIdSet.size) return [];
-  return (flatOptions || []).filter((o) => wipUnitIdSet.has(String(o.id)));
-}, [flatOptions, wipUnitIdSet]);
+  const ids = Array.from(wipUnitIdSet || []);
+  if (!ids.length) return [];
+
+  const numFromMeta = (id) => {
+    const n = flatLookup?.[id]?.number;
+    const parsed = Number(String(n ?? "").replace(/[^\d]/g, ""));
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
+  const opts = ids.map((id) => ({
+    id: String(id),
+    label: flatLabel(id), // uses flatLookup inside
+    _n: numFromMeta(String(id)),
+  }));
+
+  // Sort by flat number (optional)
+  opts.sort((a, b) => (a._n - b._n) || String(a.label).localeCompare(String(b.label)));
+
+  return opts.map(({ _n, ...rest }) => rest);
+}, [wipUnitIdSet, flatLookup]);
+
+// const wipFlatOptions = useMemo(() => {
+//   if (!wipUnitIdSet.size) return [];
+//   return (flatOptions || []).filter((o) => wipUnitIdSet.has(String(o.id)));
+// }, [flatOptions, wipUnitIdSet]);
 
 const paretoCategoryData = useMemo(() => {
   const items = Array.isArray(wipItemsForPareto) ? wipItemsForPareto : [];
@@ -6583,13 +6880,20 @@ const paretoCategoryData = useMemo(() => {
   items.forEach((item) => {
     const st = String(item?.item_status || "").toLowerCase();
 
+       // ✅ HARD LOCK: only items from SNAG flats (WIP unit ids)
+   if (wipUnitIdSet.size) {
+     const fId = item?.location?.flat_id;
+     if (!fId || !wipUnitIdSet.has(String(fId))) return;
+   }
+
     // ✅ Status behavior:
     // - If user selected a status, respect it.
     // - Else default to "pending inside WIP" (i.e. exclude completed).
     if (selectedStatus) {
       if (!matchesStatusFilter(item, selectedStatus)) return;
     } else {
-      if (st === "completed") return;
+  // default: show all non-completed items inside SNAG flats
+  if (st === "completed") return;
     }
 
     // ✅ Floor filter (uses flatLookup like before)
@@ -6626,8 +6930,7 @@ const paretoCategoryData = useMemo(() => {
     const cumulativePct = Math.round((running / total) * 100);
     return { ...r, cumulativePct, isTop80: cumulativePct <= 80 };
   });
-}, [wipItemsForPareto, globalFilters.status, paretoFilters, flatLookup]);
-
+}, [wipItemsForPareto, wipUnitIdSet, globalFilters.status, paretoFilters, flatLookup]);
   // const paretoCategoryData = useMemo(() => {
   //   if (!workingItems || !workingItems.length) return [];
 
@@ -6729,10 +7032,10 @@ const paretoTopColor = useMemo(
 );
 
 const paretoCardTitle = useMemo(() => {
-  if (!paretoStatus) return "Pareto Deep (Snags • Pending )";
-  if (paretoStatus === "completed") return "Pareto Deep (Snags • Completed )";
-  if (paretoStatus === "started") return "Pareto Deep (Snags • Started )";
-  return `Pareto Deep (Snags • ${titleCaseStatus(paretoStatus)} )`;
+  if (!paretoStatus) return "Pareto Chart (Snags • Pending )";
+  if (paretoStatus === "completed") return "Pareto Chart (Snags • Completed )";
+  if (paretoStatus === "started") return "Pareto Chart (Snags • Started )";
+  return `Pareto Chart (Snags • ${titleCaseStatus(paretoStatus)} )`;
 }, [paretoStatus]);
 
 const tatRoleChartData = useMemo(() => {
@@ -7257,12 +7560,88 @@ const MultiLineTick = ({ x, y, payload }) => {
               </div>
             </Card>
             {/* ✅ Flats Summary (like screenshot) */}
-{towerLoading ? (
-  <Card theme={theme} className="p-5">
-    <div className="text-base font-black mb-1">Flats Summary</div>
-    <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
-      Loading...
+            <Card theme={theme} className="p-5" ref={flatsSummaryRef}>
+  <div className="flex items-start justify-between gap-3 mb-2">
+    <div>
+      <div className="text-base font-black">
+        {flatsDrill.mode === "detail" ? flatsDrill.bucketLabel : "Flats Summary"}
+      </div>
+
+      <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+        {globalFilters.buildingId
+          ? `Building: ${
+              buildingNameMap.get(String(globalFilters.buildingId)) ||
+              `Building #${globalFilters.buildingId}`
+            }`
+          : "All Buildings"}
+      </div>
+
+      {flatsDrill.mode === "detail" && (
+        <div className="text-[11px] font-semibold mt-1" style={{ color: subText }}>
+          Click “Back” to return summary
+        </div>
+      )}
     </div>
+
+    <div className="flex items-center gap-2">
+      {flatsDrill.mode === "detail" && (
+        <button
+          type="button"
+          onClick={resetFlatsDrill}
+          className="h-[40px] px-3 rounded-xl text-xs font-black border"
+          style={{
+            borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+            background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+            color: textColor,
+          }}
+        >
+          Back
+        </button>
+      )}
+
+      {/* ✅ ONLY Export PDF button (as you said) */}
+      {/* <button
+        type="button"
+        onClick={handleFlatsSummaryExportPDF}
+        className="h-[40px] px-4 rounded-xl text-xs font-black border flex items-center gap-2"
+        style={{
+          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+          background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+          color: textColor,
+        }}
+      >
+        <Download size={16} />
+        Export PDF
+      </button> */}
+    </div>
+  </div>
+
+  {/* ✅ Chart area (same place, drilldown inside this) */}
+  {flatsDrill.mode === "summary" ? (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart
+        data={flatsSummaryChartData}
+        margin={{ top: 20, right: 20, left: 10, bottom: 40 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+        <XAxis dataKey="name" stroke={subText} interval={0} height={60} tick={<MultiLineTick />} />
+        <YAxis stroke={subText} allowDecimals={false} />
+        <Tooltip content={<CustomTooltip />} />
+
+        {/* ✅ click enabled */}
+        <Bar
+          dataKey="value"
+          name="Flats"
+          label={<TopValueLabel />}
+          onClick={(e) => onFlatsSummaryBarClick(e?.payload)}
+        >
+          {(flatsSummaryChartData || []).map((entry, idx) => (
+            <Cell key={`cell-${idx}`} fill={entry.color} cursor="pointer" />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  ) : flatsDrill.loading ? (
     <div
       className="h-[320px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
       style={{
@@ -7271,181 +7650,200 @@ const MultiLineTick = ({ x, y, payload }) => {
         color: subText,
       }}
     >
-      Loading flats summary...
+      Loading detail...
     </div>
-  </Card>
-) : safeNumber(flatsSummaryStats.total) > 0 ? (
-  <Card theme={theme} className="p-5">
-    <div className="flex items-start justify-between gap-3 mb-2">
-      <div>
-        <div className="text-base font-black">Flats Summary</div>
-
-        <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
-          {globalFilters.buildingId
-            ? `Building: ${
-                buildingNameMap.get(String(globalFilters.buildingId)) ||
-                `Building #${globalFilters.buildingId}`
-              }`
-            : "All Buildings"}
-          {` • Yet to start: ${fmtInt(flatsSummaryStats.yetToStart)}`}
-        </div>
-      </div>
-
-      {/* right side info box (same as screenshot) */}
-      <div
-        className="text-xs font-semibold rounded-xl border px-3 py-2 whitespace-nowrap"
-        style={{
-          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-          background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
-          color: textColor,
-        }}
-      >
-<div style={{ color: FLATS_SUMMARY_COLORS.total, fontWeight: 900 }}>
-  Total flats: {fmtInt(flatsSummaryStats.total)}
-</div>
-<div style={{ color: FLATS_SUMMARY_COLORS.initiated, fontWeight: 900 }}>
-  Initiated: {fmtInt(flatsSummaryStats.initiated)}
-</div>
-<div style={{ color: FLATS_SUMMARY_COLORS.snag, fontWeight: 900 }}>
-  Snag flats: {fmtInt(flatsSummaryStats.snag)}
-</div>
-<div style={{ color: FLATS_SUMMARY_COLORS.desnag, fontWeight: 900 }}>
-  Desnag: {fmtInt(flatsSummaryStats.desnag)}
-</div>
-
-<div style={{ color: FLATS_SUMMARY_COLORS.pendingForSnag, fontWeight: 900 }}>
-  Pending for snag: {fmtInt(flatsSummaryStats.pendingForSnag)}
-</div>
-      </div>
+  ) : flatsDrill.error ? (
+    <div
+      className="h-[320px] rounded-2xl border flex flex-col items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      <div>{flatsDrill.error}</div>
     </div>
-
+  ) : (
     <ResponsiveContainer width="100%" height={320}>
-      <BarChart data={flatsSummaryChartData} margin={{ top: 20, right: 20, left: 10, bottom: 40 }}>
+      <BarChart
+        data={flatsDrill.units}
+        margin={{ top: 20, right: 20, left: 10, bottom: 60 }}
+      >
         <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
-        <XAxis dataKey="name" stroke={subText} interval={0} height={60} tick={<MultiLineTick />} />
+        <XAxis
+          dataKey="unit_label"
+          stroke={subText}
+          interval={0}
+          angle={-25}
+          textAnchor="end"
+          height={70}
+          tickFormatter={(v) => (String(v).length > 16 ? `${String(v).slice(0, 16)}…` : v)}
+        />
         <YAxis stroke={subText} allowDecimals={false} />
         <Tooltip content={<CustomTooltip />} />
-        {/* <Bar dataKey="value" name="Flats" fill={CHART_COLORS.primary} label={<TopValueLabel />} /> */}
-        <Bar dataKey="value" name="Flats" label={<TopValueLabel />}>
-  {(flatsSummaryChartData || []).map((entry, idx) => (
-    <Cell key={`cell-${idx}`} fill={entry.color} />
-  ))}
-</Bar>
+        <Legend />
 
+        {/* ✅ stacked unit-wise breakdown (appears on the chart itself) */}
+        <Bar dataKey="not_started" stackId="a" name="Not Started" fill={CHART_COLORS.muted} />
+        <Bar dataKey="maker_pending" stackId="a" name="Maker Pending" fill={CHART_COLORS.warning} />
+        <Bar dataKey="checker_pending" stackId="a" name="Checker Pending" fill={CHART_COLORS.secondary} />
+
+        <Bar dataKey="completed" stackId="a" name="Completed" fill={CHART_COLORS.success}>
+          {/* ✅ total label on top of bar */}
+          <LabelList dataKey="total_items" position="top" />
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
-  </Card>
-) : (
-  <EmptyChart
-    title="Flats Summary"
-    subtitle={towerError || "No flats summary data for current filters."}
-  />
-)}
+  )}
+</Card>
+
 
 
 
              {/* ✅ Pareto Block (checkbox multiselect) */}
             {paretoCategoryData.length > 0 && (
-              <Card theme={theme} className="p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-                  <div>
-<div className="text-base font-black">{paretoCardTitle}</div>
-                    <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
-                      Category dimension + optional floor / flat focus.
-                    </div>
-                  </div>
+             <Card theme={theme} className="p-5">
+  <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+    <div>
+      <div className="text-base font-black">{paretoCardTitle}</div>
+      
+    </div>
 
-                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 w-full lg:w-auto">
-                    <div className="min-w-[220px]">
-                      <Label theme={theme}>Category dimension</Label>
-                      <Select
-                        theme={theme}
-                        className="h-[42px]"
-                        value={paretoFilters.categoryMode}
-                        onChange={(e) => setParetoFilters((p) => ({ ...p, categoryMode: e.target.value }))}
-                      >
-                        {PARETO_CATEGORY_MODES.map((m) => (
-                          <option key={m.value} value={m.value}>
-                            {m.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
+    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 w-full lg:w-auto">
+      <div className="min-w-[220px]">
+        <Label theme={theme}>Category</Label>
+        <Select
+          theme={theme}
+          className="h-[42px]"
+          value={paretoFilters.categoryMode}
+          onChange={(e) =>
+            setParetoFilters((p) => ({ ...p, categoryMode: e.target.value }))
+          }
+        >
+          {PARETO_CATEGORY_MODES.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </Select>
+      </div>
 
-                    {globalFilters.buildingId && floorOptions.length > 0 && (
-                      <MultiSelectDropdown
-                        theme={theme}
-                        label="Floors (multi-select)"
-                        options={floorOptions}
-                        value={paretoFilters.floorIds}
-                        onChange={(arr) => setParetoFilters((p) => ({ ...p, floorIds: arr }))}
-                        placeholder="All floors"
-                        className="min-w-[240px]"
-                      />
-                    )}
+      {globalFilters.buildingId && wipFloorOptions.length > 0 && (
+        <MultiSelectDropdown
+          theme={theme}
+          label="Snag floors"
+          options={wipFloorOptions}
+          value={paretoFilters.floorIds}
+          onChange={(arr) => setParetoFilters((p) => ({ ...p, floorIds: arr }))}
+          placeholder="All SNAG floors"
+          className="min-w-[240px]"
+        />
+      )}
 
-                   {(wipFlatOptions.length > 0 || flatOptions.length > 0) && (
-  <MultiSelectDropdown
-    theme={theme}
-    label="Snag flats"
-    options={wipFlatOptions.length > 0 ? wipFlatOptions : flatOptions}
-    value={paretoFilters.focusFlatIds}
-    onChange={(arr) => setParetoFilters((p) => ({ ...p, focusFlatIds: arr }))}
-    placeholder="All SNAG flats"
-    className="min-w-[260px]"
-  />
-)}
+      {wipFlatOptions.length > 0 && (
+        <MultiSelectDropdown
+          theme={theme}
+          label="Snag flats"
+          options={wipFlatOptions}
+          value={paretoFilters.focusFlatIds}
+          onChange={(arr) =>
+            setParetoFilters((p) => ({ ...p, focusFlatIds: arr }))
+          }
+          placeholder="All SNAG flats"
+          className="min-w-[260px]"
+        />
+      )}
+    </div>
+  </div>
 
-                  </div>
-                </div>
+  {towerLoading ? (
+    <div
+      className="h-[460px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      Loading pareto...
+    </div>
+  ) : paretoCategoryData.length === 0 ? (
+    <div
+      className="h-[460px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      No pareto data for current filters.
+    </div>
+  ) : (
+    <div className="overflow-x-auto">
+      <div style={{ minWidth: paretoMinWidth }}>
+        <ResponsiveContainer width="100%" height={460}>
+          <ComposedChart
+            data={paretoCategoryData}
+            margin={{ top: 20, right: 30, left: 10, bottom: 90 }}
+          >
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
+            />
+            <XAxis
+              dataKey="categoryLabel"
+              stroke={subText}
+              angle={-30}
+              textAnchor="end"
+              height={95}
+              interval={0}
+              style={{ fontSize: "11px" }}
+              tickFormatter={(v) =>
+                String(v).length > 28 ? `${String(v).slice(0, 28)}…` : v
+              }
+            />
+            <YAxis yAxisId="left" stroke={subText} width={55} />
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              stroke={subText}
+              domain={[0, 100]}
+              tickFormatter={(v) => `${v}%`}
+              width={50}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend />
 
-                <div className="overflow-x-auto">
-                  <div style={{ minWidth: paretoMinWidth }}>
-                    <ResponsiveContainer width="100%" height={460}>
-                      <ComposedChart data={paretoCategoryData} margin={{ top: 20, right: 30, left: 10, bottom: 90 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
-                        <XAxis
-                          dataKey="categoryLabel"
-                          stroke={subText}
-                          angle={-30}
-                          textAnchor="end"
-                          height={95}
-                          interval={0}
-                          style={{ fontSize: "11px" }}
-                          tickFormatter={(v) => (String(v).length > 28 ? `${String(v).slice(0, 28)}…` : v)}
-                        />
-                        <YAxis yAxisId="left" stroke={subText} width={55} />
-                        <YAxis
-                          yAxisId="right"
-                          orientation="right"
-                          stroke={subText}
-                          domain={[0, 100]}
-                          tickFormatter={(v) => `${v}%`}
-                          width={50}
-                        />
-                        <Tooltip content={<CustomTooltip />} />
-                        <Legend />
+            <Bar
+              yAxisId="left"
+              dataKey="pending"
+              name={paretoBarName}
+              label={<TopValueLabel />}
+            >
+              {paretoCategoryData.map((entry, idx) => (
+                <Cell
+                  key={idx}
+                  fill={entry.isTop80 ? paretoTopColor : CHART_COLORS.muted}
+                />
+              ))}
+            </Bar>
 
-                        <Bar yAxisId="left" dataKey="pending" name={paretoBarName} label={<TopValueLabel />}>
-  {paretoCategoryData.map((entry, idx) => (
-    <Cell key={idx} fill={entry.isTop80 ? paretoTopColor : CHART_COLORS.muted} />
-  ))}
-</Bar>
+            <Line
+              yAxisId="right"
+              type="monotone"
+              dataKey="cumulativePct"
+              name="Cumulative %"
+              stroke={CHART_COLORS.secondary}
+              strokeWidth={2}
+              dot={false}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  )}
+</Card>
 
-                        <Line
-                          yAxisId="right"
-                          type="monotone"
-                          dataKey="cumulativePct"
-                          name="Cumulative %"
-                          stroke={CHART_COLORS.secondary}
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </Card>
             )}
 
             {/* ✅ 30-Day Velocity FULL WIDTH (complete space) */}
@@ -7513,7 +7911,7 @@ const MultiLineTick = ({ x, y, payload }) => {
             <div className="grid gap-4 lg:grid-cols-2">
               {/* 1) Bar */}
               {/* 1) Tower-wise Progress (Horizontal Stacked like image) */}
-{towerLoading ? (
+{/* {towerLoading ? (
   <Card theme={theme} className="p-5">
     <div className="text-base font-black mb-1">Tower-wise Progress</div>
     <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
@@ -7541,10 +7939,8 @@ const MultiLineTick = ({ x, y, payload }) => {
           stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
         />
 
-        {/* X = counts */}
         <XAxis type="number" stroke={subText} />
 
-        {/* Y = towers */}
         <YAxis
           type="category"
           dataKey="tower"
@@ -7556,7 +7952,6 @@ const MultiLineTick = ({ x, y, payload }) => {
         <Tooltip content={<CustomTooltip />} />
         <Legend />
 
-        {/* stacked series (same keys as API) */}
         <Bar
           dataKey="pending_yet_to_start"
           name="Pending (Yet to Start)"
@@ -7565,13 +7960,13 @@ const MultiLineTick = ({ x, y, payload }) => {
         />
         <Bar
           dataKey="work_in_progress_unit"
-          name="Work In Progress"
+          name="Snag Flats"
           stackId="a"
           fill={towerKeyColor("work_in_progress_unit")}
         />
         <Bar
           dataKey="yet_to_verify"
-          name="Yet To Verify"
+          name="Pending for Snag"
           stackId="a"
           fill={towerKeyColor("yet_to_verify")}
         />
@@ -7589,37 +7984,10 @@ const MultiLineTick = ({ x, y, payload }) => {
     title="Tower-wise Progress"
     subtitle={towerError || "No tower data for current filters."}
   />
-)}
+)} */}
 
 
-              {/* 2) Pie */}
-              {statusPieData.length > 0 ? (
-                <Card theme={theme} className="p-5">
-                  <div className="text-base font-black mb-3">Status Distribution(Questions)</div>
-                  <ResponsiveContainer width="100%" height={320}>
-                    <PieChart>
-                      <Pie
-                        data={statusPieData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={100}
-                        dataKey="value"
-                      >
-                        {statusPieData.map((entry, idx) => (
-                          <Cell key={idx} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<CustomTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </Card>
-              ) : (
-                <EmptyChart title="Status Distribution" />
-              )}
-
-              {/* 3) Donut (counts, not percent) */}
+     {/* 3) Donut (counts, not percent) */}
              {/* 3) Donut (from API: unit-stage-role-summary) */}
 {unitStageLoading ? (
   <Card theme={theme} className="p-5">
@@ -7710,6 +8078,36 @@ const MultiLineTick = ({ x, y, payload }) => {
   />
 )}
 
+
+
+              {/* 2) Pie */}
+              {statusPieData.length > 0 ? (
+                <Card theme={theme} className="p-5">
+                  <div className="text-base font-black mb-3">Status Distribution(Questions)</div>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <PieChart>
+                      <Pie
+                        data={statusPieData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={100}
+                        dataKey="value"
+                      >
+                        {statusPieData.map((entry, idx) => (
+                          <Cell key={idx} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </Card>
+              ) : (
+                <EmptyChart title="Status Distribution" />
+              )}
+
+         
 
               {/* 4) Top Team Performance */}
               {/* {teamPerformanceData.length > 0 ? (

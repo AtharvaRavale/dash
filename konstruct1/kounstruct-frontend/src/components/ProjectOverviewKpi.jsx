@@ -1828,14 +1828,25 @@ const splitLabel = (label) => {
   return titleize(label);
 };
 
+// const roleLabel = (code) => {
+//   const c = String(code || "").toUpperCase();
+//   if (c === "MAKER") return "Maker";
+//   if (c === "INSPECTOR") return "Inspector";
+//   if (c === "CHECKER") return "Checker";
+//   if (c === "SUPERVISOR") return "Supervisor";
+//   return c || "—";
+// };
 const roleLabel = (code) => {
-  const c = String(code || "").toUpperCase();
+  const c = normRoleCode(code);
   if (c === "MAKER") return "Maker";
   if (c === "INSPECTOR") return "Inspector";
   if (c === "CHECKER") return "Checker";
   if (c === "SUPERVISOR") return "Supervisor";
   return c || "—";
 };
+
+const normRoleCode = (v) => String(v ?? "").trim().toUpperCase();
+
 
 const pickRows = (data) => {
   if (!data || typeof data !== "object") return [];
@@ -1878,6 +1889,31 @@ const resolveProjectId = (routeParam) => {
     localStorage.getItem("project_id");
   return Number(ls) || null;
 };
+// ✅ normalize keys: "Unit Id" -> "unitid", "unit_id" -> "unitid"
+const normKey = (k) => String(k || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// ✅ fetch value by possible keys (supports space keys)
+const pickByKeys = (row, keys = []) => {
+  if (!row || typeof row !== "object") return null;
+
+  // direct exact match first
+  for (const k of keys) {
+    if (k in row && row[k] !== null && row[k] !== undefined && String(row[k]).trim() !== "") {
+      return row[k];
+    }
+  }
+
+  // normalized lookup (space/underscore/case-insensitive)
+  const map = new Map(Object.keys(row).map((k) => [normKey(k), k]));
+  for (const want of keys) {
+    const real = map.get(normKey(want));
+    if (real && row[real] !== null && row[real] !== undefined && String(row[real]).trim() !== "") {
+      return row[real];
+    }
+  }
+
+  return null;
+};
 
 const normalizeList = (res) => {
   const d = res?.data ?? res;
@@ -1892,24 +1928,23 @@ const toCsv = (arr) => {
   const a = uniq(arr).map(String).filter(Boolean);
   return a.length ? a.join(",") : null;
 };
-
 const getFlatIdFromRow = (row) => {
   if (!row || typeof row !== "object") return null;
 
-  // some APIs may return id directly
-  const direct =
-    row.flat_id ??
-    row.flatId ??
-    row.unit_id ??
-    row.unitId ??
-    row.flat_pk ??
-    row.unit_pk ??
-    row.id ??
-    row.pk;
+  // ✅ THIS IS THE MAIN FIX (your API sends "Unit Id")
+  const direct = pickByKeys(row, [
+    "Unit Id",
+    "unit_id",
+    "flat_id",
+    "UnitID",
+    "Flat Id",
+    "id",
+    "pk",
+  ]);
 
   if (direct) return direct;
 
-  // nested
+  // nested fallbacks (unchanged)
   const nestedFlat =
     row.flat && typeof row.flat === "object" ? (row.flat.id ?? row.flat.pk) : null;
   if (nestedFlat) return nestedFlat;
@@ -1921,21 +1956,53 @@ const getFlatIdFromRow = (row) => {
   return null;
 };
 
+
+// const getFlatIdFromRow = (row) => {
+//   if (!row || typeof row !== "object") return null;
+
+//   // some APIs may return id directly
+//   const direct =
+//     row.flat_id ??
+//     row.flatId ??
+//     row.unit_id ??
+//     row.unitId ??
+//     row.flat_pk ??
+//     row.unit_pk ??
+//     row.id ??
+//     row.pk;
+
+//   if (direct) return direct;
+
+//   // nested
+//   const nestedFlat =
+//     row.flat && typeof row.flat === "object" ? (row.flat.id ?? row.flat.pk) : null;
+//   if (nestedFlat) return nestedFlat;
+
+//   const nestedUnit =
+//     row.unit && typeof row.unit === "object" ? (row.unit.id ?? row.unit.pk) : null;
+//   if (nestedUnit) return nestedUnit;
+
+//   return null;
+// };
+
 // ✅ IMPORTANT: number extractor (WIP table often has only number)
 const stripNumber = (v) => String(v ?? "").trim();
 
 const getFlatNumberFromRow = (row) => {
   if (!row || typeof row !== "object") return "";
-  const candidate =
-    row.flat_number ??
-    row.unit_number ??
-    row.number ??
-    row.unit_no ??
-    row.flat_no ??
-    row.unit_label ??
-    row.flat_label ??
-    "";
-  return stripNumber(candidate);
+
+  const candidate = pickByKeys(row, [
+    "Unit No",
+    "flat_number",
+    "unit_number",
+    "number",
+    "unit_no",
+    "flat_no",
+    "unit_label",
+    "flat_label",
+  ]);
+
+  return stripNumber(candidate || "");
 };
 
 const getRowTowerId = (row) => {
@@ -2128,14 +2195,19 @@ const MultiSelectDropdown = ({
 
   const selectedCount = (value || []).length;
 
-  const buttonText = useMemo(() => {
+    const buttonText = useMemo(() => {
     if (!selectedCount) return placeholder;
+
+    // ✅ NEW: show All selected
+    if (options?.length && selectedCount === options.length) return "All selected";
+
     if (selectedCount === 1) {
       const one = options.find((o) => String(o.value) === String(value[0]));
       return one?.label || "1 selected";
     }
     return `${selectedCount} selected`;
   }, [selectedCount, placeholder, options, value]);
+
 
   useEffect(() => {
     const onDown = (e) => {
@@ -2374,7 +2446,9 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
   });
 
   const [wipRole, setWipRole] = useState("");
-  const debouncedWipRole = useDebouncedValue(wipRole, 250);
+//   const debouncedWipRole = useDebouncedValue(wipRole, 250);
+const debouncedWipRole = useDebouncedValue(wipRole, 0);
+
 
   const [openingFlatId, setOpeningFlatId] = useState(null);
 
@@ -2387,6 +2461,11 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
     flatPrefetch: null,
     projectName: null,
   });
+
+    // ✅ auto-select guards
+  const autoPreselectRef = useRef({ projectId: null, stages: false, towers: false });
+  const userTouchedRef = useRef({ stages: false, towers: false });
+
 
   const newSignal = (key) => {
     try {
@@ -2412,6 +2491,48 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
     (stageOptions || []).forEach((o) => m.set(String(o.value), o.label));
     return m;
   }, [stageOptions]);
+    // ✅ Auto-select ALL stages once options load (only first time, only if user didn't touch)
+  useEffect(() => {
+    if (!projectId) return;
+    if (!stageOptions?.length) return;
+
+    if (userTouchedRef.current.stages) return;
+    if (autoPreselectRef.current.projectId !== projectId) {
+      autoPreselectRef.current = { projectId, stages: false, towers: false };
+    }
+    if (autoPreselectRef.current.stages) return;
+    if ((stageIds || []).length) return;
+
+    autoPreselectRef.current.stages = true;
+    setStageIds(stageOptions.map((o) => String(o.value)));
+  }, [projectId, stageOptions, stageIds]);
+
+
+    // ✅ Auto-select ALL towers once options load (only first time, only if user didn't touch)
+  useEffect(() => {
+    if (!projectId) return;
+    if (!buildingOptions?.length) return;
+
+    if (userTouchedRef.current.towers) return;
+    if (autoPreselectRef.current.projectId !== projectId) {
+      autoPreselectRef.current = { projectId, stages: false, towers: false };
+    }
+    if (autoPreselectRef.current.towers) return;
+    if ((buildingIds || []).length) return;
+
+    autoPreselectRef.current.towers = true;
+
+    const all = buildingOptions.map((o) => String(o.value));
+    setBuildingIds(all);
+
+    // ✅ dependent filters reset
+    setFloorIds([]);
+    setUnitIds([]);
+  }, [projectId, buildingOptions, buildingIds]);
+
+
+
+
 
   const towerNameById = useMemo(() => {
     const m = new Map();
@@ -2611,7 +2732,10 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
         p.unit_id = String(wipCtx.flatCsv);
       }
 
-      if (debouncedWipRole) p.pending_from = String(debouncedWipRole);
+    //   if (debouncedWipRole) p.pending_from = String(debouncedWipRole);
+    const role = normRoleCode(debouncedWipRole);
+if (role) p.pending_from = role;
+
 
       if (include_rows) p.include_rows = true;
       if (limit) p.limit = limit;
@@ -2628,7 +2752,8 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
     const p = { project_id: projectId };
     if (stageId) p.stage_id = Number(stageId);
     if (towerId) p.tower_id = Number(towerId);
-    if (debouncedWipRole) p.pending_from = String(debouncedWipRole);
+const role = normRoleCode(debouncedWipRole);
+if (role) p.pending_from = role;
     return p;
   }, [projectId, wipCtx, debouncedWipRole]);
 
@@ -2819,6 +2944,9 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
 
     if (didInitRef.current.projectId === projectId) return;
     didInitRef.current.projectId = projectId;
+    autoPreselectRef.current = { projectId, stages: false, towers: false };
+    userTouchedRef.current = { stages: false, towers: false };
+
 
     setStageIds([]);
     setBuildingIds([]);
@@ -2986,6 +3114,17 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
   const breakdownMeta = wipBreakdown?.meta || {};
   const wipUnitCount = wipBreakdown?.work_in_progress_units?.count ?? null;
   const byPendingFrom = wipBreakdown?.breakdown?.by_pending_from || {};
+  const modalRoleChips = useMemo(() => {
+  const m = new Map(); // code -> count (sum duplicates)
+  Object.entries(byPendingFrom || {}).forEach(([k, v]) => {
+    const code = normRoleCode(k);
+    if (!code) return;
+    const n = Number(v);
+    m.set(code, (m.get(code) || 0) + (Number.isFinite(n) ? n : 0));
+  });
+  return Array.from(m.entries()).map(([code, count]) => ({ code, count }));
+}, [byPendingFrom]);
+
   const makerSupervisorSplit = wipBreakdown?.breakdown?.maker_supervisor_split || {};
   const modalAsOf = breakdownMeta?.as_of || wipMeta?.as_of || "";
 
@@ -3112,11 +3251,15 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
       console.log("⚠️ Prefetch failed (navigation already done):", e?.response?.data || e?.message);
     }
   };
+const toggleModalRole = (roleCode) => {
+  const code = normRoleCode(roleCode);
+  setWipRole((prev) => (normRoleCode(prev) === code ? "" : code));
+};
 
-  const toggleModalRole = (roleCode) => {
-    const code = String(roleCode || "").toUpperCase();
-    setWipRole((prev) => (prev === code ? "" : code));
-  };
+//   const toggleModalRole = (roleCode) => {
+//     const code = String(roleCode || "").toUpperCase();
+//     setWipRole((prev) => (prev === code ? "" : code));
+//   };
 
   const asOfText = meta?.as_of || meta?.asOf || meta?.date || "";
 
@@ -3196,7 +3339,10 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
               label="Stages"
               value={stageIds}
               options={stageOptions}
-              onChange={setStageIds}
+onChange={(vals) => {
+  userTouchedRef.current.stages = true;
+  setStageIds(vals);
+}}
               placeholder="Select stages"
             />
 
@@ -3205,10 +3351,12 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
               value={buildingIds}
               options={buildingOptions}
               onChange={(vals) => {
-                setBuildingIds(vals);
-                setFloorIds([]);
-                setUnitIds([]);
-              }}
+  userTouchedRef.current.towers = true;
+  setBuildingIds(vals);
+  setFloorIds([]);
+  setUnitIds([]);
+}}
+
               placeholder="Select towers"
             />
 
@@ -3240,15 +3388,7 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
             />
           </div>
 
-          <div className="mt-4">
-            <FilterLabel>Pending From (optional)</FilterLabel>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <RoleChip code="MAKER" label="Maker" />
-              <RoleChip code="INSPECTOR" label="Inspector" />
-              <RoleChip code="CHECKER" label="Checker" />
-              <RoleChip code="SUPERVISOR" label="Supervisor" />
-            </div>
-          </div>
+         
         </SectionCard>
 
         {err ? (
@@ -3289,252 +3429,262 @@ export default function ProjectOverviewKpi({ projectId: projectIdProp = null }) 
         </div>
 
         {/* ---------------- WIP MODAL ---------------- */}
-        {wipOpen ? (
-          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45" onMouseDown={() => setWipOpen(false)}>
-            <div className="min-h-full px-4 pb-10 pt-20 md:pt-24">
-              <div
-                className="mx-auto w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-900/10"
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <div className="sticky top-0 z-10 border-b bg-white/95 backdrop-blur p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-base font-extrabold text-slate-900">
-                        Work In Progress Breakdown
-                      </div>
-                      <div className="mt-1 text-xs font-semibold text-slate-500">
-                        {modalStageName ? <span>Stage: {modalStageName}</span> : null}
-                        {modalTowerName ? <span> • Tower: {modalTowerName}</span> : null}
-                        {wipRole ? <span> • Role: {roleLabel(wipRole)}</span> : null}
-                        {modalAsOf ? <span> • As of: {modalAsOf}</span> : null}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={refreshWipAll}
-                        className="inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 ring-1 ring-slate-900/5"
-                      >
-                        <RefreshCcw size={14} />
-                        Refresh
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={exportWipExcel}
-                        className="inline-flex items-center gap-2 rounded-xl border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:opacity-90 shadow-sm"
-                      >
-                        <Download size={14} />
-                        Export Excel
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setWipOpen(false)}
-                        className="rounded-xl border bg-white p-2 text-slate-700 hover:bg-slate-50 ring-1 ring-slate-900/5"
-                        aria-label="Close"
-                        title="Close"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
+        {/* ---------------- WIP MODAL (OPAQUE / NO TRANSPARENCY) ---------------- */}
+{wipOpen ? (
+  <div
+    className="fixed inset-0 z-[9999] bg-white"
+    role="dialog"
+    aria-modal="true"
+  >
+    {/* keep space for your top navbar (64px) */}
+    <div className="h-full pt-[64px]">
+      {/* click on empty white area closes (not inside panel) */}
+      <div
+        className="h-full overflow-y-auto p-3 md:p-4"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) setWipOpen(false);
+        }}
+      >
+        <div className="mx-auto w-full max-w-[1400px] min-h-full">
+          <div className="min-h-full rounded-3xl bg-white shadow-2xl ring-1 ring-slate-900/10 overflow-hidden">
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-20 border-b bg-white p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-base font-extrabold text-slate-900">
+                    Work In Progress Breakdown
+                  </div>
+                  <div className="mt-1 text-xs font-semibold text-slate-500">
+                    {modalStageName ? <span>Stage: {modalStageName}</span> : null}
+                    {modalTowerName ? <span> • Tower: {modalTowerName}</span> : null}
+                    {wipRole ? <span> • Role: {roleLabel(wipRole)}</span> : null}
+                    {modalAsOf ? <span> • As of: {modalAsOf}</span> : null}
                   </div>
                 </div>
 
-                <div className="p-4">
-                  {wipBreakdownErr ? (
-                    <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 ring-1 ring-red-900/5">
-                      {wipBreakdownErr}
-                    </div>
-                  ) : null}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={refreshWipAll}
+                    className="inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 ring-1 ring-slate-900/5"
+                  >
+                    <RefreshCcw size={14} />
+                    Refresh
+                  </button>
 
-                  {wipErr ? (
-                    <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 ring-1 ring-red-900/5">
-                      {wipErr}
-                    </div>
-                  ) : null}
+                  <button
+                    type="button"
+                    onClick={exportWipExcel}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-900 bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:opacity-90 shadow-sm"
+                  >
+                    <Download size={14} />
+                    Export Excel
+                  </button>
 
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs font-extrabold text-slate-700">Summary</div>
+                  <button
+                    type="button"
+                    onClick={() => setWipOpen(false)}
+                    className="rounded-xl border bg-white p-2 text-slate-700 hover:bg-slate-50 ring-1 ring-slate-900/5"
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      <ChipButton active={!wipRole} onClick={() => setWipRole("")} title="Show all roles">
-                        All Roles
-                      </ChipButton>
+            {/* Body */}
+            <div className="bg-white p-3">
+              {wipBreakdownErr ? (
+                <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 ring-1 ring-red-900/5">
+                  {wipBreakdownErr}
+                </div>
+              ) : null}
 
-                      {Object.keys(byPendingFrom || {}).map((k) => (
-                        <ChipButton
-                          key={k}
-                          active={String(wipRole).toUpperCase() === String(k).toUpperCase()}
-                          onClick={() => toggleModalRole(k)}
-                          title="Filter table + breakdown by this role"
-                        >
-                          {roleLabel(k)} • {fmtInt(byPendingFrom[k])}
-                        </ChipButton>
-                      ))}
-                    </div>
-                  </div>
+              {wipErr ? (
+                <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 ring-1 ring-red-900/5">
+                  {wipErr}
+                </div>
+              ) : null}
 
-                  {wipBreakdownLoading ? (
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      {Array.from({ length: 4 }).map((_, i) => (
-                        <div key={i} className="h-[56px] animate-pulse rounded-xl border bg-white px-3 py-2 ring-1 ring-slate-900/5">
-                          <div className="h-3 w-20 rounded bg-slate-100" />
-                          <div className="mt-2 h-5 w-12 rounded bg-slate-100" />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      <MiniStat label="WIP Units" value={fmtInt(wipUnitCount)} />
-                      <MiniStat label="Role Filter" value={wipRole ? roleLabel(wipRole) : "—"} />
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-extrabold text-slate-700">Summary</div>
 
-                      {makerSupervisorSplit &&
-                      typeof makerSupervisorSplit === "object" &&
-                      Object.keys(makerSupervisorSplit).length ? (
-                        <div className="mt-3 rounded-2xl border bg-slate-50 p-3 sm:col-span-4 ring-1 ring-slate-900/5">
-                          <div className="mb-2 text-xs font-extrabold text-slate-700">
-                            Maker / Supervisor Split
-                          </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ChipButton
+                    active={!wipRole}
+                    onClick={() => setWipRole("")}
+                    title="Show all roles"
+                  >
+                    All Roles
+                  </ChipButton>
 
-                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                            {[
-                              ["maker_pending", "units_with_maker_pending"],
-                              ["supervisor_pending", "units_with_supervisor_pending"],
-                            ].map(([label, key]) => (
-                              <MiniStat
-                                key={key}
-                                label={splitLabel(label)}
-                                value={fmtInt(makerSupervisorSplit?.[key])}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-
-                  <div className="mt-4 rounded-3xl border overflow-hidden ring-1 ring-slate-900/5">
-                    <div className="flex items-center justify-between gap-2 border-b px-4 py-3 bg-white">
-                      <div className="text-sm font-extrabold text-slate-900">
-                        Excel Table Preview
-                      </div>
-                      <div className="text-[11px] font-semibold text-slate-500">
-                        Click a row to open Flat Report
-                      </div>
-                    </div>
-
-                    {wipLoading ? (
-                      <div className="p-4 text-sm font-semibold text-slate-600">Loading...</div>
-                    ) : !wipRows?.length ? (
-                      <div className="p-4 text-sm font-semibold text-slate-600">No rows returned.</div>
-                    ) : (
-                      <div className="max-h-[56vh] overflow-auto">
-                        <table className="min-w-max w-full text-sm">
-                          <thead className="sticky top-0 bg-white">
-                            <tr className="border-b">
-                              <th className="whitespace-nowrap px-4 py-2 text-left text-[11px] font-extrabold text-slate-600">
-                                Open
-                              </th>
-
-                              {wipColumns.map((k) => {
-                                const colKey = String(k);
-                                const isRed = RED_HIGHLIGHT_COLS.has(colKey);
-                                return (
-                                  <th
-                                    key={colKey}
-                                    className={[
-                                      "whitespace-nowrap px-4 py-2 text-left text-[11px] font-extrabold",
-                                      isRed ? "bg-red-50 text-red-700" : "text-slate-600",
-                                    ].join(" ")}
-                                  >
-                                    {colKey.replace(/_/g, " ")}
-                                  </th>
-                                );
-                              })}
-                            </tr>
-                          </thead>
-
-                          <tbody>
-                            {wipRows.map((row, idx) => {
-                              // ✅ HERE is the main fix:
-                              // row may not have flat_id; we resolve from number→id map
-                              const resolvedFlatId = resolveFlatIdFromRow(row);
-                              const clickable = Boolean(resolvedFlatId);
-
-                              return (
-                                <tr
-                                  key={idx}
-                                  className={[
-                                    "border-b last:border-0",
-                                    idx % 2 === 0 ? "bg-white" : "bg-slate-50/30",
-                                    clickable ? "cursor-pointer hover:bg-slate-50" : "",
-                                  ].join(" ")}
-                                  onClick={() => {
-                                    console.log("✅ Row clicked, number:", getFlatNumberFromRow(row), "resolvedFlatId:", resolvedFlatId);
-                                    if (clickable) goToFlatReport(row, resolvedFlatId);
-                                  }}
-                                >
-                                  <td className="whitespace-nowrap px-4 py-2 text-slate-700">
-                                    {clickable ? (
-                                      <span className="inline-flex items-center gap-1 text-xs font-bold">
-                                        {openingFlatId === String(resolvedFlatId) ? (
-                                          "Opening..."
-                                        ) : (
-                                          <>
-                                            <ExternalLink size={14} />
-                                            Open
-                                          </>
-                                        )}
-                                      </span>
-                                    ) : (
-                                      <span className="text-xs text-slate-400">—</span>
-                                    )}
-                                  </td>
-
-                                  {wipColumns.map((k) => {
-                                    const colKey = String(k);
-                                    const v = row?.[colKey];
-                                    const txt = formatCell(colKey, v, row);
-                                    const isRed = RED_HIGHLIGHT_COLS.has(colKey);
-
-                                    return (
-                                      <td
-                                        key={colKey}
-                                        className={[
-                                          "whitespace-nowrap px-4 py-2",
-                                          isRed
-                                            ? "bg-red-50 font-extrabold text-red-700"
-                                            : "text-slate-800 font-medium",
-                                        ].join(" ")}
-                                        title={txt}
-                                      >
-                                        {txt}
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-
-                  {modalAsOf ? (
-                    <div className="mt-3 text-[11px] font-semibold text-slate-500">
-                      As of: {modalAsOf}
-                    </div>
-                  ) : null}
+                  {modalRoleChips.map(({ code, count }) => (
+                    <ChipButton
+                      key={code}
+                      active={normRoleCode(wipRole) === code}
+                      onClick={() => toggleModalRole(code)}
+                      title="Filter table + breakdown by this role"
+                    >
+                      {roleLabel(code)} • {fmtInt(count)}
+                    </ChipButton>
+                  ))}
                 </div>
               </div>
 
-              <div className="h-6" />
+              {wipBreakdownLoading ? (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-[56px] animate-pulse rounded-xl border bg-white px-3 py-2 ring-1 ring-slate-900/5"
+                    >
+                      <div className="h-3 w-20 rounded bg-slate-100" />
+                      <div className="mt-2 h-5 w-12 rounded bg-slate-100" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <MiniStat label="WIP Units" value={fmtInt(wipUnitCount)} />
+                  <MiniStat label="Role Filter" value={wipRole ? roleLabel(wipRole) : "—"} />
+
+                  {makerSupervisorSplit &&
+                  typeof makerSupervisorSplit === "object" &&
+                  Object.keys(makerSupervisorSplit).length ? (
+                    <div className="mt-3 rounded-2xl border bg-slate-50 p-3 sm:col-span-4 ring-1 ring-slate-900/5">
+                      <div className="mb-2 text-xs font-extrabold text-slate-700">
+                        Maker / Supervisor Split
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {[
+                          ["maker_pending", "units_with_maker_pending"],
+                          ["supervisor_pending", "units_with_supervisor_pending"],
+                        ].map(([label, key]) => (
+                          <MiniStat
+                            key={key}
+                            label={splitLabel(label)}
+                            value={fmtInt(makerSupervisorSplit?.[key])}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              <div className="mt-4 rounded-3xl border overflow-hidden ring-1 ring-slate-900/5 bg-white">
+                <div className="flex items-center justify-between gap-2 border-b px-4 py-3 bg-white">
+                  <div className="text-sm font-extrabold text-slate-900">Excel Table Preview</div>
+                  <div className="text-[11px] font-semibold text-slate-500">
+                    Click a row to open Flat Report
+                  </div>
+                </div>
+
+                {wipLoading ? (
+                  <div className="p-4 text-sm font-semibold text-slate-600">Loading...</div>
+                ) : !wipRows?.length ? (
+                  <div className="p-4 text-sm font-semibold text-slate-600">No rows returned.</div>
+                ) : (
+                  <div className="max-h-[calc(100dvh-260px)] overflow-auto bg-white">
+                    <table className="min-w-max w-full text-sm bg-white">
+                      <thead className="sticky top-0 bg-white">
+                        <tr className="border-b bg-white">
+                          <th className="whitespace-nowrap px-4 py-2 text-left text-[11px] font-extrabold text-slate-600">
+                            Open
+                          </th>
+
+                          {wipColumns.map((k) => {
+                            const colKey = String(k);
+                            const isRed = RED_HIGHLIGHT_COLS.has(colKey);
+                            return (
+                              <th
+                                key={colKey}
+                                className={[
+                                  "whitespace-nowrap px-4 py-2 text-left text-[11px] font-extrabold",
+                                  isRed ? "bg-red-50 text-red-700" : "bg-white text-slate-600",
+                                ].join(" ")}
+                              >
+                                {colKey.replace(/_/g, " ")}
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+
+                      <tbody className="bg-white">
+                        {wipRows.map((row, idx) => {
+                          const resolvedFlatId = resolveFlatIdFromRow(row);
+                          const clickable = Boolean(resolvedFlatId);
+
+                          return (
+                            <tr
+                              key={idx}
+                              className={[
+                                "border-b last:border-0",
+                                idx % 2 === 0 ? "bg-white" : "bg-slate-50",
+                                clickable ? "cursor-pointer hover:bg-slate-50" : "",
+                              ].join(" ")}
+                              onClick={() => {
+                                if (clickable) goToFlatReport(row, resolvedFlatId);
+                              }}
+                            >
+                              <td className="whitespace-nowrap px-4 py-2 text-slate-700 bg-white">
+                                {clickable ? (
+                                  <span className="inline-flex items-center gap-1 text-xs font-bold">
+                                    <ExternalLink size={14} />
+                                    Open
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-slate-400">—</span>
+                                )}
+                              </td>
+
+                              {wipColumns.map((k) => {
+                                const colKey = String(k);
+                                const v = row?.[colKey];
+                                const txt = formatCell(colKey, v, row);
+                                const isRed = RED_HIGHLIGHT_COLS.has(colKey);
+
+                                return (
+                                  <td
+                                    key={colKey}
+                                    className={[
+                                      "whitespace-nowrap px-4 py-2",
+                                      isRed
+                                        ? "bg-red-50 font-extrabold text-red-700"
+                                        : "bg-white text-slate-800 font-medium",
+                                    ].join(" ")}
+                                    title={txt}
+                                  >
+                                    {txt}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {modalAsOf ? (
+                <div className="mt-3 text-[11px] font-semibold text-slate-500">
+                  As of: {modalAsOf}
+                </div>
+              ) : null}
             </div>
           </div>
-        ) : null}
+        </div>
+      </div>
+    </div>
+  </div>
+) : null}
+
       </div>
     </div>
   );
