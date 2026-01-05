@@ -5251,6 +5251,19 @@ const CHART_COLORS = {
   danger: "#dc2626",
   muted: "#94a3b8",
 };
+
+const UNIT_STATUS_VIEWS = [
+  { value: "donut", label: "Donut" },
+  { value: "pie", label: "Pie" },
+  { value: "bar", label: "Bar" },
+];
+
+const QUESTION_STATUS_VIEWS = [
+  { value: "pie", label: "Pie" },
+  { value: "donut", label: "Donut" },
+  { value: "bar", label: "Bar" },
+];
+
 const FLATS_SUMMARY_COLORS = {
   total: CHART_COLORS.danger,        // red
   initiated: CHART_COLORS.warning,   // orange
@@ -5487,18 +5500,33 @@ const [tatAging, setTatAging] = useState(null);
 const [tatAgingLoading, setTatAgingLoading] = useState(false);
 const [tatAgingError, setTatAgingError] = useState("");
 
+const [unitStatusView, setUnitStatusView] = useState("donut");     // donut | pie | bar
+const [questionStatusView, setQuestionStatusView] = useState("pie"); // pie | donut | bar
 
 
 // ✅ Flats Summary Drilldown
 const flatsSummaryRef = useRef(null);
 
 const [flatsDrill, setFlatsDrill] = useState({
-  mode: "summary",     // "summary" | "detail"
-  bucketKey: null,     // API bucket like "work_in_progress"
+  view: "summary",          // "summary" | "units" | "rooms" | "questions"
+  bucketKey: null,
   bucketLabel: "",
   loading: false,
   error: "",
-  units: [],           // chart-ready rows
+
+  units: [],
+  detailItems: [],
+  unitDetailMap: {},
+
+  selectedUnitId: null,
+  selectedUnitLabel: "",
+  rooms: [],
+
+  // ✅ NEW (for room → pending questions drill)
+  roomQuestionMap: {},      // { [roomKey]: questions[] } (built from unitDetail.rooms)
+  selectedRoomKey: null,
+  selectedRoomLabel: "",
+  pendingQuestions: [],     // [{ title, status }]
 });
 
 // Summary-bar key -> API bucket mapping
@@ -5510,6 +5538,189 @@ const FLATS_BUCKET_MAP = {
   desnag: "complete",
   yetToStart: "pending_yet_to_start",
 };
+const buildRoomRowsFromItems = (items = [], unitId) => {
+  const map = new Map();
+
+  (items || []).forEach((it) => {
+    const loc = it?.location || {};
+    const uid = loc.flat_id || loc.unit_id; // backend usually flat_id
+
+    if (!uid || String(uid) !== String(unitId)) return;
+
+    const room =
+      String(loc.room_category || loc.room_type || loc.room || "Other").trim() || "Other";
+
+    const st = String(it?.item_status || "").toLowerCase();
+
+    const rec =
+      map.get(room) || {
+        room,
+        total_items: 0,
+        not_started: 0,
+        maker_pending: 0,
+        checker_pending: 0,
+        completed: 0,
+        other: 0,
+      };
+
+    rec.total_items += 1;
+
+    if (st === "completed") rec.completed += 1;
+    else if (st === "not_started" || st === "created") rec.not_started += 1;
+    else if (st === "pending_for_maker" || st === "pending_maker" || st === "started")
+      rec.maker_pending += 1;
+    else if (st === "pending_checker" || st === "pending_for_checker" || st === "pending_for_inspector")
+      rec.checker_pending += 1;
+    else rec.other += 1;
+
+    map.set(room, rec);
+  });
+
+  const rows = Array.from(map.values());
+  rows.forEach((r) => (r.open = r.not_started + r.maker_pending + r.checker_pending + r.other));
+  rows.sort((a, b) => b.open - a.open || b.total_items - a.total_items || String(a.room).localeCompare(String(b.room)));
+  return rows;
+};
+
+const buildRoomRowsFromUnitDetail = (unitDetail) => {
+  const rooms = Array.isArray(unitDetail?.rooms) ? unitDetail.rooms : [];
+  if (!rooms.length) return [];
+
+  const rows = rooms.map((r) => {
+    const roomName = String(r?.room_label || `Room #${r?.room_id || "-"}`).trim();
+
+    // flatten questions for this room
+    const questions = [];
+    (r?.by_category || []).forEach((cat) => {
+      (cat?.questions || []).forEach((q) => questions.push(q));
+    });
+
+    const rec = {
+      room_id: r?.room_id,
+      room: roomName,
+      total_items: safeNumber(r?.total ?? questions.length),
+      not_started: 0,
+      maker_pending: 0,
+      checker_pending: 0,
+      completed: 0,
+      other: 0,
+    };
+
+    questions.forEach((q) => {
+      const st = String(q?.item_status || "").toLowerCase();
+
+      if (st === "completed") rec.completed += 1;
+      else if (st === "not_started" || st === "created") rec.not_started += 1;
+      else if (st === "pending_for_maker" || st === "pending_maker" || st === "started")
+        rec.maker_pending += 1;
+      else if (st === "pending_checker" || st === "pending_for_checker" || st === "pending_for_inspector")
+        rec.checker_pending += 1;
+      else rec.other += 1;
+    });
+
+    // ensure total_items is consistent
+    const sum =
+      rec.completed + rec.not_started + rec.maker_pending + rec.checker_pending + rec.other;
+    if (!rec.total_items) rec.total_items = sum;
+
+    rec.open = rec.total_items - rec.completed;
+    return rec;
+  });
+
+  rows.sort(
+    (a, b) =>
+      safeNumber(b.open) - safeNumber(a.open) ||
+      safeNumber(b.total_items) - safeNumber(a.total_items) ||
+      String(a.room).localeCompare(String(b.room))
+  );
+
+  return rows;
+};
+const roomKeyOf = (roomRowOrRoomObj) => {
+  const rid = roomRowOrRoomObj?.room_id ?? roomRowOrRoomObj?.roomId;
+  return rid != null ? String(rid) : String(roomRowOrRoomObj?.room || "Other");
+};
+
+const flattenRoomQuestions = (roomObj) => {
+  const out = [];
+  (roomObj?.by_category || []).forEach((cat) => {
+    (cat?.questions || []).forEach((q) => out.push(q));
+  });
+  return out;
+};
+
+const isPendingQuestion = (st) => String(st || "").toLowerCase() !== "completed";
+
+const buildRoomQuestionMapFromUnitDetail = (unitDetail) => {
+  const map = {};
+  const rooms = Array.isArray(unitDetail?.rooms) ? unitDetail.rooms : [];
+  rooms.forEach((r) => {
+    const key = roomKeyOf(r);
+    map[key] = flattenRoomQuestions(r);
+  });
+  return map;
+};
+
+// ✅ fallback if backend didn’t send rooms/questions
+const pendingQuestionsFromItemsFallback = (items = [], unitId, roomLabel) => {
+  const targetRoom = String(roomLabel || "").toLowerCase().trim();
+
+  return (items || [])
+    .filter((it) => {
+      const loc = it?.location || {};
+      const uid = loc.flat_id || loc.unit_id;
+      if (!uid || String(uid) !== String(unitId)) return false;
+
+      const room =
+        String(loc.room_category || loc.room_type || loc.room || "Other")
+          .toLowerCase()
+          .trim();
+
+      // try match room label; if label empty, accept
+      if (targetRoom && room !== targetRoom) return false;
+
+      return isPendingQuestion(it?.item_status);
+    })
+    .map((it) => ({
+      title: it?.item_title || it?.question_title || "Untitled",
+      status: it?.item_status || "",
+    }));
+};
+
+
+const onFlatUnitBarClick = (barOrWrapper) => {
+  const row = barOrWrapper?.payload || barOrWrapper || {};
+  const unitId = row.unit_id;
+  if (!unitId) return;
+
+  const unitDetail = flatsDrill?.unitDetailMap?.[String(unitId)];
+
+  let roomRows = unitDetail ? buildRoomRowsFromUnitDetail(unitDetail) : [];
+
+  if (!roomRows.length) {
+    const srcItems =
+      flatsDrill.detailItems && flatsDrill.detailItems.length
+        ? flatsDrill.detailItems
+        : (workingItems || []);
+    roomRows = buildRoomRowsFromItems(srcItems, unitId);
+  }
+
+  // ✅ NEW: build room -> questions map (only if unitDetail has rooms)
+  const roomQuestionMap = unitDetail ? buildRoomQuestionMapFromUnitDetail(unitDetail) : {};
+
+  setFlatsDrill((p) => ({
+    ...p,
+    view: "rooms",
+    selectedUnitId: unitId,
+    selectedUnitLabel: row.unit_label || flatLabel(unitId),
+    rooms: roomRows,
+    roomQuestionMap,            // ✅ add
+    selectedRoomKey: null,      // ✅ reset
+    selectedRoomLabel: "",
+    pendingQuestions: [],       // ✅ reset
+    error: roomRows.length ? "" : "No room-wise data found for this flat.",
+  }));
+};
 
 const FLATS_BUCKET_LABEL = {
   initialised: "Initiated Flats",
@@ -5520,14 +5731,22 @@ const FLATS_BUCKET_LABEL = {
 };
 
 const extractDetailUnits = (apiData, bucketKey) => {
-  // expected: `${bucketKey}_detail` e.g. work_in_progress_detail
   const block = apiData?.[`${bucketKey}_detail`];
-  const units = Array.isArray(block?.units) ? block.units : [];
 
-  // convert to chart rows
-  return units.map((u) => {
+  const units = Array.isArray(block?.units) ? block.units : [];
+  const items = Array.isArray(block?.items) ? block.items : [];
+
+  // ✅ map unit_id -> full unit object (contains rooms[])
+  const unitDetailMap = {};
+  units.forEach((u) => {
+    const uid = u?.unit_id || u?.unit_summary?.unit_id;
+    if (uid != null) unitDetailMap[String(uid)] = u;
+  });
+
+  const rows = units.map((u) => {
     const us = u?.unit_summary || {};
     const uid = u?.unit_id || us?.unit_id;
+
     return {
       unit_id: uid,
       unit_label: flatLabel(uid),
@@ -5539,6 +5758,8 @@ const extractDetailUnits = (apiData, bucketKey) => {
       pending_from: us.pending_from || "",
     };
   });
+
+  return { rows, items, unitDetailMap };
 };
 
 
@@ -5546,14 +5767,20 @@ const fetchFlatsBucketDetail = async (bucketKey) => {
   if (!bucketKey) return;
 
   setFlatsDrill((p) => ({
-    ...p,
-    mode: "detail",
-    bucketKey,
-    bucketLabel: FLATS_BUCKET_LABEL[bucketKey] || bucketKey,
-    loading: true,
-    error: "",
-    units: [],
-  }));
+  ...p,
+  view: "units", // ✅ IMPORTANT: leave summary immediately
+  bucketKey,
+  bucketLabel: FLATS_BUCKET_LABEL[bucketKey] || bucketKey,
+  loading: true,
+  error: "",
+  units: [],
+  detailItems: [],
+  unitDetailMap: {},     // ✅ add
+  selectedUnitId: null,
+  selectedUnitLabel: "",
+  rooms: [],
+}));
+
 
   try {
     const params = { project_id: id };
@@ -5565,13 +5792,15 @@ const fetchFlatsBucketDetail = async (bucketKey) => {
     // ✅ request detail for clicked bucket
     // backend supports "detail_buckets" (seen in meta)
     params.detail_buckets = bucketKey;
+    params.include_questions = true;
+    params.include_room_stats = true; // if backend ignores, no harm
 
     const res = await axios.get(
       `${API_BASE}/checklists/api/dashboard/unit-stage-role-summary/by-tower/`,
       { params, headers: authHeaders() }
     );
 
-    const rows = extractDetailUnits(res.data, bucketKey);
+const { rows, items, unitDetailMap } = extractDetailUnits(res.data, bucketKey);
 
     if (!rows.length) {
       setFlatsDrill((p) => ({
@@ -5584,11 +5813,15 @@ const fetchFlatsBucketDetail = async (bucketKey) => {
     }
 
     setFlatsDrill((p) => ({
-      ...p,
-      loading: false,
-      units: rows,
-      error: "",
-    }));
+  ...p,
+  view: "units",
+  loading: false,
+  units: rows,
+  detailItems: items, // ✅ store item-level for room drill
+    unitDetailMap,     // ✅ add
+
+  error: "",
+}));
   } catch (e) {
     const msg =
       e?.response?.data?.detail ||
@@ -5598,27 +5831,47 @@ const fetchFlatsBucketDetail = async (bucketKey) => {
   }
 };
 
-const onFlatsSummaryBarClick = (barPayload) => {
-  // barPayload: { key: "snag" ... }
-  const summaryKey = barPayload?.key;
+const onFlatsSummaryBarClick = (barOrWrapper) => {
+  const row = barOrWrapper?.payload || barOrWrapper || {};
+  const summaryKey = row.key;
   const bucketKey = FLATS_BUCKET_MAP[summaryKey];
-
-  // total pe click ignore or you can show list of flats if you want
   if (!bucketKey) return;
-
   fetchFlatsBucketDetail(bucketKey);
 };
 
+
 const resetFlatsDrill = () => {
   setFlatsDrill({
-    mode: "summary",
+    view: "summary",
     bucketKey: null,
     bucketLabel: "",
     loading: false,
     error: "",
     units: [],
+    detailItems: [],
+    unitDetailMap: {},
+    selectedUnitId: null,
+    selectedUnitLabel: "",
+    rooms: [],
+
+    roomQuestionMap: {},      // ✅ add
+    selectedRoomKey: null,    // ✅ add
+    selectedRoomLabel: "",    // ✅ add
+    pendingQuestions: [],     // ✅ add
   });
 };
+
+
+const backFromRoomsToUnits = () => {
+  setFlatsDrill((p) => ({
+    ...p,
+    view: "units",
+    selectedUnitId: null,
+    selectedUnitLabel: "",
+    rooms: [],
+  }));
+};
+
 
 // ✅ Simple "Export PDF" (print this chart only)
 const handleFlatsSummaryExportPDF = () => {
@@ -5652,6 +5905,61 @@ const handleFlatsSummaryExportPDF = () => {
   win.close();
 };
 
+const backFromQuestionsToRooms = () => {
+  setFlatsDrill((p) => ({
+    ...p,
+    view: "rooms",
+    selectedRoomKey: null,
+    selectedRoomLabel: "",
+    pendingQuestions: [],
+  }));
+};
+
+const onRoomBarClick = (barOrWrapper) => {
+  const row = barOrWrapper?.payload || barOrWrapper || {};
+  const unitId = flatsDrill?.selectedUnitId;
+  if (!unitId) return;
+
+  const roomKey = roomKeyOf(row);
+  const roomLabel = row?.room || row?.room_label || `Room ${roomKey}`;
+
+  // ✅ prefer backend questions (unitDetail.rooms)
+  let qsRaw = flatsDrill?.roomQuestionMap?.[roomKey] || [];
+
+  // ✅ fallback to items if backend didn’t send questions
+  if (!qsRaw.length) {
+    const srcItems =
+      flatsDrill.detailItems && flatsDrill.detailItems.length
+        ? flatsDrill.detailItems
+        : (workingItems || []);
+    const fallback = pendingQuestionsFromItemsFallback(srcItems, unitId, roomLabel);
+    setFlatsDrill((p) => ({
+      ...p,
+      view: "questions",
+      selectedRoomKey: roomKey,
+      selectedRoomLabel: roomLabel,
+      pendingQuestions: fallback,
+      error: "",
+    }));
+    return;
+  }
+
+  const pending = qsRaw
+    .filter((q) => isPendingQuestion(q?.item_status))
+    .map((q) => ({
+      title: q?.item_title || q?.question_title || q?.title || "Untitled",
+      status: q?.item_status || "",
+    }));
+
+  setFlatsDrill((p) => ({
+    ...p,
+    view: "questions",
+    selectedRoomKey: roomKey,
+    selectedRoomLabel: roomLabel,
+    pendingQuestions: pending,
+    error: "",
+  }));
+};
 
 
   const [stats, setStats] = useState(null);
@@ -5844,6 +6152,8 @@ useEffect(() => {
 
       // ✅ ADD THIS: so API returns work_in_progress_detail + wip_unit_ids
       params.detail_buckets = "work_in_progress";
+      params.include_questions = true;
+
 
       const res = await axios.get(
         `${API_BASE}/checklists/api/dashboard/unit-stage-role-summary/by-tower/`,
@@ -6569,6 +6879,24 @@ return (
     return meta?.typeName ? `${base} • ${meta.typeName}` : base;
   };
 
+
+
+const questionStatusTotal = useMemo(
+  () => (statusPieData || []).reduce((s, d) => s + safeNumber(d.value), 0),
+  [statusPieData]
+);
+
+
+
+const pieLabelWithCountAndPct = (total) => ({ name, value }) => {
+  const v = safeNumber(value);
+  const p = total ? Math.round((v / total) * 100) : 0;
+  return `${name}: ${fmtInt(v)} (${p}%)`;
+};
+
+
+
+
   const flatProgressChartData = useMemo(() => {
     const items = Array.isArray(workingItems) ? workingItems : [];
     const map = new Map();
@@ -6752,7 +7080,10 @@ const unitDonutData = useMemo(() => {
   unitCounts.yet_to_verify,
   unitCounts.complete,
 ]);
-
+const unitStatusTotal = useMemo(
+  () => (unitDonutData || []).reduce((s, d) => s + safeNumber(d.value), 0),
+  [unitDonutData]
+);
 
   const roleRadarData = useMemo(() => {
     if (!visibleRoleKeys.length) return [];
@@ -7564,7 +7895,7 @@ const MultiLineTick = ({ x, y, payload }) => {
   <div className="flex items-start justify-between gap-3 mb-2">
     <div>
       <div className="text-base font-black">
-        {flatsDrill.mode === "detail" ? flatsDrill.bucketLabel : "Flats Summary"}
+        {flatsDrill.view !== "summary" ? flatsDrill.bucketLabel : "Flats Summary"}
       </div>
 
       <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
@@ -7576,7 +7907,7 @@ const MultiLineTick = ({ x, y, payload }) => {
           : "All Buildings"}
       </div>
 
-      {flatsDrill.mode === "detail" && (
+      {flatsDrill.view !== "summary" && (
         <div className="text-[11px] font-semibold mt-1" style={{ color: subText }}>
           Click “Back” to return summary
         </div>
@@ -7584,20 +7915,27 @@ const MultiLineTick = ({ x, y, payload }) => {
     </div>
 
     <div className="flex items-center gap-2">
-      {flatsDrill.mode === "detail" && (
-        <button
-          type="button"
-          onClick={resetFlatsDrill}
-          className="h-[40px] px-3 rounded-xl text-xs font-black border"
-          style={{
-            borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-            background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
-            color: textColor,
-          }}
-        >
-          Back
-        </button>
-      )}
+      {flatsDrill.view !== "summary" && (
+  <button
+    type="button"
+onClick={
+  flatsDrill.view === "questions"
+    ? backFromQuestionsToRooms
+    : flatsDrill.view === "rooms"
+      ? backFromRoomsToUnits
+      : resetFlatsDrill
+}
+    className="h-[40px] px-3 rounded-xl text-xs font-black border"
+    style={{
+      borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+      background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+      color: textColor,
+    }}
+  >
+    Back
+  </button>
+)}
+
 
       {/* ✅ ONLY Export PDF button (as you said) */}
       {/* <button
@@ -7617,7 +7955,7 @@ const MultiLineTick = ({ x, y, payload }) => {
   </div>
 
   {/* ✅ Chart area (same place, drilldown inside this) */}
-  {flatsDrill.mode === "summary" ? (
+  {flatsDrill.view === "summary" ? (
     <ResponsiveContainer width="100%" height={320}>
       <BarChart
         data={flatsSummaryChartData}
@@ -7633,7 +7971,7 @@ const MultiLineTick = ({ x, y, payload }) => {
           dataKey="value"
           name="Flats"
           label={<TopValueLabel />}
-          onClick={(e) => onFlatsSummaryBarClick(e?.payload)}
+onClick={(e) => onFlatsSummaryBarClick(e?.payload || e)}
         >
           {(flatsSummaryChartData || []).map((entry, idx) => (
             <Cell key={`cell-${idx}`} fill={entry.color} cursor="pointer" />
@@ -7652,6 +7990,61 @@ const MultiLineTick = ({ x, y, payload }) => {
     >
       Loading detail...
     </div>
+    ) : flatsDrill.view === "questions" ? (
+  <div
+    className="h-[320px] rounded-2xl border overflow-auto"
+    style={{
+      borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+      background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+      color: textColor,
+    }}
+  >
+    <div className="p-4 border-b" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+      <div className="text-sm font-black">
+        Pending Questions • {flatsDrill.selectedUnitLabel} • {flatsDrill.selectedRoomLabel}
+      </div>
+      <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+        Total pending: {fmtInt(flatsDrill.pendingQuestions?.length || 0)}
+      </div>
+    </div>
+
+    {(flatsDrill.pendingQuestions || []).length === 0 ? (
+      <div className="p-6 text-sm font-semibold" style={{ color: subText }}>
+        No pending questions in this room ✅
+      </div>
+    ) : (
+      <table className="min-w-full text-xs">
+        <thead style={{ background: theme === "dark" ? "rgba(2,6,23,0.55)" : "#f1f5f9" }}>
+          <tr>
+            <th className="text-left px-4 py-2 font-black">Question</th>
+            <th className="text-left px-4 py-2 font-black">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {flatsDrill.pendingQuestions.map((q, idx) => (
+            <tr key={idx} className="border-t" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+              <td className="px-4 py-2 font-semibold">{q.title}</td>
+              <td className="px-4 py-2">
+                <span
+                  className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-black border"
+                  style={{
+                    borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                    color: statusColor(q.status).text,
+                    background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+                  }}
+                >
+                  {titleCaseStatus(q.status)}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+
+
+    
   ) : flatsDrill.error ? (
     <div
       className="h-[320px] rounded-2xl border flex flex-col items-center justify-center text-sm font-semibold"
@@ -7660,40 +8053,62 @@ const MultiLineTick = ({ x, y, payload }) => {
         background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
         color: subText,
       }}
-    >
+    >{flatsDrill.view === "rooms" ? (
+  <button onClick={backFromRoomsToUnits}>Back</button>
+) : flatsDrill.view === "units" ? (
+  <button onClick={resetFlatsDrill}>Back</button>
+) : null}
+
       <div>{flatsDrill.error}</div>
     </div>
   ) : (
     <ResponsiveContainer width="100%" height={320}>
-      <BarChart
-        data={flatsDrill.units}
-        margin={{ top: 20, right: 20, left: 10, bottom: 60 }}
-      >
-        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
-        <XAxis
-          dataKey="unit_label"
-          stroke={subText}
-          interval={0}
-          angle={-25}
-          textAnchor="end"
-          height={70}
-          tickFormatter={(v) => (String(v).length > 16 ? `${String(v).slice(0, 16)}…` : v)}
-        />
-        <YAxis stroke={subText} allowDecimals={false} />
-        <Tooltip content={<CustomTooltip />} />
-        <Legend />
+  <BarChart
+    data={flatsDrill.view === "rooms" ? flatsDrill.rooms : flatsDrill.units}
+    margin={{ top: 20, right: 20, left: 10, bottom: 60 }}
+  >
+    <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+    <XAxis
+      dataKey={flatsDrill.view === "rooms" ? "room" : "unit_label"}
+      stroke={subText}
+      interval={0}
+      angle={-25}
+      textAnchor="end"
+      height={70}
+      tickFormatter={(v) => (String(v).length > 16 ? `${String(v).slice(0, 16)}…` : v)}
+    />
+    <YAxis stroke={subText} allowDecimals={false} />
+    <Tooltip content={<CustomTooltip />} />
+    <Legend />
 
-        {/* ✅ stacked unit-wise breakdown (appears on the chart itself) */}
-        <Bar dataKey="not_started" stackId="a" name="Not Started" fill={CHART_COLORS.muted} />
-        <Bar dataKey="maker_pending" stackId="a" name="Maker Pending" fill={CHART_COLORS.warning} />
-        <Bar dataKey="checker_pending" stackId="a" name="Checker Pending" fill={CHART_COLORS.secondary} />
+    <Bar dataKey="not_started" stackId="a" name="Not Started" fill={CHART_COLORS.muted}
+onClick={(e) => {
+  const payload = e?.payload || e;
+  if (flatsDrill.view === "units") onFlatUnitBarClick(payload);
+  if (flatsDrill.view === "rooms") onRoomBarClick(payload);
+}}
+    />
+    <Bar dataKey="maker_pending" stackId="a" name="Maker Pending" fill={CHART_COLORS.warning}
+onClick={(e) => {
+  const payload = e?.payload || e;
+  if (flatsDrill.view === "units") onFlatUnitBarClick(payload);
+  if (flatsDrill.view === "rooms") onRoomBarClick(payload);
+}}
+    />
+    <Bar dataKey="checker_pending" stackId="a" name="Checker Pending" fill={CHART_COLORS.secondary}
+onClick={(e) => {
+  const payload = e?.payload || e;
+  if (flatsDrill.view === "units") onFlatUnitBarClick(payload);
+  if (flatsDrill.view === "rooms") onRoomBarClick(payload);
+}}
+    />
+    <Bar dataKey="other" stackId="a" name="Other" fill={CHART_COLORS.muted} />
+    <Bar dataKey="completed" stackId="a" name="Completed" fill={CHART_COLORS.success}>
+      <LabelList dataKey="total_items" position="top" />
+    </Bar>
+  </BarChart>
+</ResponsiveContainer>
 
-        <Bar dataKey="completed" stackId="a" name="Completed" fill={CHART_COLORS.success}>
-          {/* ✅ total label on top of bar */}
-          <LabelList dataKey="total_items" position="top" />
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
   )}
 </Card>
 
@@ -8007,22 +8422,62 @@ const MultiLineTick = ({ x, y, payload }) => {
     </div>
   </Card>
 ) : unitDonutData.length > 0 ? (
-  <Card theme={theme} className="p-5">
-    <div className="text-base font-black mb-1">Unit Status Split (Donut)</div>
+ <Card theme={theme} className="p-5">
+  <div className="flex items-start justify-between gap-3 mb-1">
+    <div className="text-base font-black">Unit Status Split</div>
 
-    <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
-      Total Units: {fmtInt(unitTotalUnits)}
-      {" • "}
-      Yet to Start: {fmtInt(unitCounts.pending_yet_to_start)}
-      {" • "}
-      WIP: {fmtInt(unitCounts.work_in_progress_unit)}
-      {" • "}
-      Yet to Verify: {fmtInt(unitCounts.yet_to_verify)}
-      {" • "}
-      Complete: {fmtInt(unitCounts.complete)}
-    
+    <div className="min-w-[160px]">
+      <Select
+        theme={theme}
+        className="h-[38px]"
+        value={unitStatusView}
+        onChange={(e) => setUnitStatusView(e.target.value)}
+      >
+        {UNIT_STATUS_VIEWS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </Select>
     </div>
+  </div>
 
+  <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+    Total Units: {fmtInt(unitTotalUnits)}
+    {" • "}
+    Yet to Start: {fmtInt(unitCounts.pending_yet_to_start)}
+    {" • "}
+    WIP: {fmtInt(unitCounts.work_in_progress_unit)}
+    {" • "}
+    Yet to Verify: {fmtInt(unitCounts.yet_to_verify)}
+    {" • "}
+    Complete: {fmtInt(unitCounts.complete)}
+  </div>
+
+  {/* ---- SAME DATA, DIFFERENT VIEW ---- */}
+  {unitStatusView === "bar" ? (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={unitDonutData} margin={{ top: 20, right: 20, left: 10, bottom: 60 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+        <XAxis
+          dataKey="name"
+          stroke={subText}
+          interval={0}
+          angle={-25}
+          textAnchor="end"
+          height={70}
+          tickFormatter={(v) => (String(v).length > 16 ? `${String(v).slice(0, 16)}…` : v)}
+        />
+        <YAxis stroke={subText} allowDecimals={false} />
+        <Tooltip content={<CustomTooltip />} />
+        <Bar dataKey="value" name="Units" label={<TopValueLabel />}>
+          {(unitDonutData || []).map((entry, idx) => (
+            <Cell key={idx} fill={entry.color} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  ) : (
     <ResponsiveContainer width="100%" height={320}>
       <PieChart>
         <Pie
@@ -8030,11 +8485,11 @@ const MultiLineTick = ({ x, y, payload }) => {
           dataKey="value"
           cx="50%"
           cy="50%"
-          innerRadius={60}
+          innerRadius={unitStatusView === "donut" ? 60 : 0}
           outerRadius={95}
           paddingAngle={2}
           labelLine={false}
-          label={({ name, value }) => `${name}: ${fmtInt(value)}`}
+          label={pieLabelWithCountAndPct(unitStatusTotal)}
         >
           {unitDonutData.map((entry, idx) => (
             <Cell key={idx} fill={entry.color} />
@@ -8044,33 +8499,39 @@ const MultiLineTick = ({ x, y, payload }) => {
         <Tooltip content={<CustomTooltip />} />
         <Legend />
 
-        {/* Center total */}
-        <text
-          x="50%"
-          y="50%"
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fontSize="22"
-          fontWeight="900"
-          fill={textColor}
-        >
-          {fmtInt(unitTotalUnits)}
-        </text>
-        <text
-          x="50%"
-          y="50%"
-          dy={22}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fontSize="11"
-          fontWeight="800"
-          fill={subText}
-        >
-          Total Units
-        </text>
+        {/* Center total ONLY for donut */}
+        {unitStatusView === "donut" && (
+          <>
+            <text
+              x="50%"
+              y="50%"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="22"
+              fontWeight="900"
+              fill={textColor}
+            >
+              {fmtInt(unitTotalUnits)}
+            </text>
+            <text
+              x="50%"
+              y="50%"
+              dy={22}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="11"
+              fontWeight="800"
+              fill={subText}
+            >
+              Total Units
+            </text>
+          </>
+        )}
       </PieChart>
     </ResponsiveContainer>
-  </Card>
+  )}
+</Card>
+
 ) : (
   <EmptyChart
     title="Unit Status Split (Donut)"
@@ -8082,27 +8543,72 @@ const MultiLineTick = ({ x, y, payload }) => {
 
               {/* 2) Pie */}
               {statusPieData.length > 0 ? (
-                <Card theme={theme} className="p-5">
-                  <div className="text-base font-black mb-3">Status Distribution(Questions)</div>
-                  <ResponsiveContainer width="100%" height={320}>
-                    <PieChart>
-                      <Pie
-                        data={statusPieData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={100}
-                        dataKey="value"
-                      >
-                        {statusPieData.map((entry, idx) => (
-                          <Cell key={idx} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<CustomTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </Card>
+               <Card theme={theme} className="p-5">
+  <div className="flex items-start justify-between gap-3 mb-3">
+    <div className="text-base font-black">Status Distribution (Questions)</div>
+
+    <div className="min-w-[160px]">
+      <Select
+        theme={theme}
+        className="h-[38px]"
+        value={questionStatusView}
+        onChange={(e) => setQuestionStatusView(e.target.value)}
+      >
+        {QUESTION_STATUS_VIEWS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </Select>
+    </div>
+  </div>
+
+  {questionStatusView === "bar" ? (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={statusPieData} margin={{ top: 20, right: 20, left: 10, bottom: 60 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+        <XAxis
+          dataKey="name"
+          stroke={subText}
+          interval={0}
+          angle={-25}
+          textAnchor="end"
+          height={70}
+          tickFormatter={(v) => (String(v).length > 18 ? `${String(v).slice(0, 18)}…` : v)}
+        />
+        <YAxis stroke={subText} allowDecimals={false} />
+        <Tooltip content={<CustomTooltip />} />
+        <Bar dataKey="value" name="Questions" label={<TopValueLabel />}>
+          {(statusPieData || []).map((entry, idx) => (
+            <Cell key={idx} fill={entry.color} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  ) : (
+    <ResponsiveContainer width="100%" height={320}>
+      <PieChart>
+        <Pie
+          data={statusPieData}
+          cx="50%"
+          cy="50%"
+          outerRadius={100}
+          innerRadius={questionStatusView === "donut" ? 60 : 0}
+          dataKey="value"
+          labelLine={false}
+          label={pieLabelWithCountAndPct(questionStatusTotal)}
+        >
+          {statusPieData.map((entry, idx) => (
+            <Cell key={idx} fill={entry.color} />
+          ))}
+        </Pie>
+        <Tooltip content={<CustomTooltip />} />
+        <Legend />
+      </PieChart>
+    </ResponsiveContainer>
+  )}
+</Card>
+
               ) : (
                 <EmptyChart title="Status Distribution" />
               )}

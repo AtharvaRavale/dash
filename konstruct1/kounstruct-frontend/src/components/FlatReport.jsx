@@ -223,6 +223,8 @@ function LogsModal({
   const borderColor = theme === "dark" ? "#475569" : "#cbd5e1";
 
   const [logsLoading, setLogsLoading] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
+
   const [logsError, setLogsError] = useState("");
   const [logsData, setLogsData] = useState(null);
 
@@ -238,6 +240,64 @@ const resolveLabels = true; // ✅ always ON, no UI toggle
   const tree = useMemo(() => (Array.isArray(logsData?.tree) ? logsData.tree : []), [logsData]);
   const widgets = logsData?.widgets || {};
   const meta = logsData?.meta || {};
+const downloadLogsExcel = async () => {
+  if (!projectId || !flatId) {
+    toast.error("Project / Flat missing for export.");
+    return;
+  }
+
+  setExportingExcel(true);
+
+  try {
+    const params = {
+      project_id: projectId,
+      flat_id: flatId,
+      order,
+      resolve_labels: "true", // ✅ always true
+      items: itemsMode,
+    };
+
+    // optional (same as logs API)
+    if (filtersFromOverview?.stageId) params.stage_id = filtersFromOverview.stageId;
+    if (filtersFromOverview?.buildingId) params.building_id = filtersFromOverview.buildingId;
+
+    const res = await axios.get(`${API_BASE}/checklists/unit-logs/export-excel/`, {
+      params,
+      headers: authHeaders(),
+      responseType: "blob",
+    });
+
+    // try filename from content-disposition
+    const cd = res?.headers?.["content-disposition"] || "";
+    let filename = "unit_logs_view.xlsx";
+    const match = cd.match(/filename="([^"]+)"/i);
+    if (match?.[1]) filename = match[1];
+
+    const blob = new Blob([res.data], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+
+    toast.success("Excel exported.");
+  } catch (e) {
+    console.error("❌ Export Excel error:", e);
+    const msg =
+      e?.response?.data?.detail ||
+      e?.response?.data?.message ||
+      "Unable to export Excel.";
+    toast.error(msg);
+  } finally {
+    setExportingExcel(false);
+  }
+};
 
   // stage accordion
   const [openStageIds, setOpenStageIds] = useState(() => new Set());
@@ -685,16 +745,34 @@ const resolveLabels = true; // ✅ always ON, no UI toggle
 
 
               {/* tree tables */}
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <div className="text-lg font-black" style={{ color: textColor }}>
-                    Logs Tree
-                  </div>
-                  <div className="text-[11px] font-semibold" style={{ color: secondaryTextColor }}>
-                    Stage-wise events (table)
-                  </div>
-                </div>
-              </div>
+              <div className="flex items-center justify-between mb-3 gap-3">
+  <div>
+    <div className="text-lg font-black" style={{ color: textColor }}>
+      Logs Tree
+    </div>
+    <div className="text-[11px] font-semibold" style={{ color: secondaryTextColor }}>
+      Stage-wise events (table)
+    </div>
+  </div>
+
+  <button
+    type="button"
+    onClick={downloadLogsExcel}
+    disabled={logsLoading || exportingExcel}
+    className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl border text-sm font-black disabled:opacity-60 disabled:cursor-not-allowed"
+    style={{
+      borderColor,
+      color: textColor,
+      background:
+        theme === "dark"
+          ? "linear-gradient(135deg, rgba(16,185,129,0.20), rgba(2,6,23,0.35))"
+          : "linear-gradient(135deg, rgba(220,252,231,0.95), rgba(255,255,255,0.98))",
+    }}
+    title="Export full logs view as Excel"
+  >
+    {exportingExcel ? "⏳ Exporting..." : "⬇️ Export Excel"}
+  </button>
+</div>
 
               <div className="space-y-4">
                 {!filteredTree.length ? (
