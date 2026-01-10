@@ -2023,7 +2023,14 @@ const getNiceCellText = (v) => {
   return s === "" ? "—" : s;
 };
 
-const HIDE_COLS = new Set(["tower_id", "unit_id", "stage_id"]);
+const HIDE_COLS = new Set([
+  "tower_id",
+  "unit_id",
+  "stage_id",
+
+  // ✅ UI-only hide
+  "Snag Completed",
+]);
 const PERCENT_COLS = new Set([
   "flat_readiness",
   "maker_percent_open",

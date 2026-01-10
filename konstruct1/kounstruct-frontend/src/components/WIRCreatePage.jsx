@@ -296,7 +296,7 @@ const [logoAdj, setLogoAdj] = useState({
         setProjects(res?.data || []);
       } catch (err) {
         console.error(err);
-        toast.error("Projects load nahi ho paaye.");
+        toast.error("Error while projects loading");
       } finally {
         setProjectsLoading(false);
       }
@@ -341,7 +341,7 @@ const [logoAdj, setLogoAdj] = useState({
         );
       } catch (err) {
         console.error(err);
-        toast.error("Project ke users load nahi ho paaye.");
+        toast.error("User not loaded");
       } finally {
         setUsersLoading(false);
       }
@@ -410,11 +410,11 @@ const [logoAdj, setLogoAdj] = useState({
     e.preventDefault();
 
     if (!form.project_id) {
-      toast.error("Project select karo.");
+      toast.error("Select project first");
       return;
     }
     if (!selectedUserIds.length) {
-      toast.error("Kam se kam ek user select karo jise WIR forward hoga.");
+      toast.error("Select atleast one user");
       return;
     }
 
@@ -488,7 +488,7 @@ const [logoAdj, setLogoAdj] = useState({
 
       const res = await createWIRFull(fd);
       const data = res?.data || res;
-      if (!data?.id) throw new Error("WIR full-create response me id nahi mila.");
+      if (!data?.id) throw new Error("WIR full-create ID error");
 
       toast.success("WIR created + logos + attachments + signatures + auto-forward.");
 
@@ -536,7 +536,7 @@ const [logoAdj, setLogoAdj] = useState({
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "WIR create karte time error aaya.";
+        "Error while creating WIR";
       toast.error(msg);
     } finally {
       setLoading(false);

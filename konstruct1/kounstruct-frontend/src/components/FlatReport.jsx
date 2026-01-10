@@ -1651,7 +1651,7 @@ export default function FlatReport() {
       />
 
 
-      <div className="mx-auto max-w-[1200px] px-4 md:px-8 py-8">
+<div className="mx-auto max-w-[1600px] 2xl:max-w-[1800px] px-4 md:px-10 py-10">
         {/* Header */}
         <div
           className="rounded-3xl mb-6 border backdrop-blur-xl px-6 py-5 flex items-start justify-between gap-4"

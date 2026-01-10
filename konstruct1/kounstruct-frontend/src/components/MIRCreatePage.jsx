@@ -159,7 +159,7 @@ export default function MIRCreatePage() {
         setProjects(rows);
       } catch (err) {
         console.error("Failed to load projects", err);
-        toast.error("Projects load nahi ho paaye.");
+        toast.error("Failed to load projects");
       } finally {
         setProjectsLoading(false);
       }
@@ -196,7 +196,7 @@ export default function MIRCreatePage() {
         setProjectUsers(options);
       } catch (err) {
         console.error("Failed to load project users", err);
-        toast.error("Project ke users load nahi ho paaye.");
+        toast.error("Failed to load project users");
       } finally {
         setUsersLoading(false);
       }
@@ -250,12 +250,12 @@ export default function MIRCreatePage() {
     e.preventDefault();
 
     if (!form.project_id) {
-      toast.error("Project select karo.");
+      toast.error("Select project");
       return;
     }
 
     if (!selectedUserIds.length) {
-      toast.error("Kam se kam ek user select karo jise MIR forward hoga.");
+      toast.error("Atleast select one user");
       return;
     }
 
@@ -364,7 +364,7 @@ export default function MIRCreatePage() {
       const mirId = data.id;
 
       if (!mirId) {
-        throw new Error("MIR full-create response me id nahi mila.");
+        throw new Error("MIR full-create ID error");
       }
 
       toast.success(
@@ -426,7 +426,7 @@ export default function MIRCreatePage() {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "MIR full-create karte time error aaya.";
+        "MIR full-create error";
       toast.error(msg);
     } finally {
       setLoading(false);

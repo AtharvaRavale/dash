@@ -495,7 +495,7 @@ const [logoAdj, setLogoAdj] = useState({
       if (initialMode === "edit") setIsEditing(true);
     } catch (err) {
       console.error("Failed to load WIR detail", err);
-      toast.error("WIR detail load nahi ho paayi.");
+      toast.error("Failed to load WIR detail");
     } finally {
       setLoading(false);
     }
@@ -669,7 +669,7 @@ const decisionLabel = useMemo(() => {
   const handleForward = async () => {
     if (!wir?.id) return;
     if (!selectedForwardUserId) {
-      toast.error("Pehle user select karo jise forward karna hai.");
+      toast.error("Select the user");
       return;
     }
 
@@ -679,7 +679,7 @@ const decisionLabel = useMemo(() => {
         to_user_id: Number(selectedForwardUserId),
         comment: forwardComment || "",
       });
-      toast.success("WIR forward ho gaya.");
+      toast.success("WIR forwarded");
       setForwardComment("");
       await fetchDetail();
     } catch (err) {
@@ -687,7 +687,7 @@ const decisionLabel = useMemo(() => {
       toast.error(
         err.response?.data?.detail ||
           err.response?.data?.error ||
-          "Forward karte time error aaya."
+          "Forward WIR error"
       );
     } finally {
       setActionLoading(false);
@@ -698,11 +698,11 @@ const decisionLabel = useMemo(() => {
   const handleUploadAttachments = async () => {
     if (!wir?.id) return;
     if (!attachmentsFiles.length) {
-      toast.error("Pehle kam se kam ek file select karo.");
+      toast.error("Select atleast one file");
       return;
     }
     if (!uploadCategory) {
-      toast.error("Category select karo.");
+      toast.error("Select Category");
       return;
     }
 
@@ -715,7 +715,7 @@ const decisionLabel = useMemo(() => {
       if (attachmentDescription) fd.append("description", attachmentDescription);
 
       await uploadWIRAttachments(wir.id, fd);
-      toast.success("Attachments upload ho gaye.");
+      toast.success("Attachments uploaded");
 
       setAttachmentsFiles([]);
       setAttachmentName("");
@@ -728,7 +728,7 @@ const decisionLabel = useMemo(() => {
       toast.error(
         err.response?.data?.detail ||
           err.response?.data?.error ||
-          "Attachments upload karte time error aaya."
+          "Attachments upload error"
       );
     } finally {
       setActionLoading(false);
@@ -738,7 +738,7 @@ const decisionLabel = useMemo(() => {
   const uploadLogo = async (fieldName, file) => {
     if (!wir?.id) return;
     if (!file) {
-      toast.error("Pehle logo file select karo.");
+      toast.error("Slect logo first");
       return;
     }
     try {
@@ -746,14 +746,14 @@ const decisionLabel = useMemo(() => {
       const fd = new FormData();
       fd.append(fieldName, file); // client_logo | pmc_logo | contractor_logo
       await uploadWIRLogos(wir.id, fd);
-      toast.success("Logo upload/update ho gaya.");
+      toast.success("Logo upload/updated");
       await fetchDetail();
     } catch (err) {
       console.error("Logo upload error", err);
       toast.error(
         err.response?.data?.detail ||
           err.response?.data?.error ||
-          "Logo upload karte time error aaya."
+          "Logo upload error"
       );
     } finally {
       setActionLoading(false);
@@ -764,7 +764,7 @@ const decisionLabel = useMemo(() => {
   const saveContractorSignature = async () => {
     if (!wir?.id) return;
     if (!contractorSignFile) {
-      toast.error("Contractor signature select karo.");
+      toast.error("Select Contractor signature");
       return;
     }
     try {
@@ -792,7 +792,7 @@ const decisionLabel = useMemo(() => {
   const saveInspectorSignature = async () => {
     if (!wir?.id) return;
     if (!inspectorSignFile) {
-      toast.error("Inspector signature select karo.");
+      toast.error("Seelect Inspector signature");
       return;
     }
     try {
@@ -820,7 +820,7 @@ const decisionLabel = useMemo(() => {
   // ✅ PRINT fallback (in case html2pdf is not installed / fails)
   const handlePrintFallback = () => {
     if (!pdfRef.current || !wir) {
-      toast.error("PDF content ready nahi hai.");
+      toast.error("PDF content not ready");
       return;
     }
     try {
@@ -832,7 +832,7 @@ const decisionLabel = useMemo(() => {
       const printContents = sheet.outerHTML;
       const win = window.open("", "", "height=800,width=1000");
       if (!win) {
-        toast.error("Popup blocked ho gaya. Please allow popups.");
+        toast.error("Please allow popups.");
         return;
       }
 
@@ -877,7 +877,7 @@ const decisionLabel = useMemo(() => {
       win.print();
     } catch (e) {
       console.error("Print fallback error", e);
-      toast.error("PDF export mein error aaya.");
+      toast.error("PDF error");
     }
   };
 
@@ -1236,7 +1236,6 @@ const decision = (editForm.decision || "NONE").toUpperCase();
               whiteSpace: "nowrap",
             }}
           >
-            TEMPLATE
           </div>
 
           <div style={{ position: "relative", zIndex: 1 }}>
@@ -1867,9 +1866,8 @@ const decision = (editForm.decision || "NONE").toUpperCase();
 
       {/* ✅ Extra Fields editable */}
       <div style={{ ...cardStyle, background: cardColor, border: `1px solid ${borderColor}` }}>
-        <h3 style={{ marginTop: 0 }}>🧩 Extra Fields (Modular)</h3>
+        <h3 style={{ marginTop: 0 }}>Extra Fields</h3>
         <p style={{ fontSize: 12, color: "#6b7280", marginTop: 0 }}>
-          Ye values <code>extra_data</code> JSON me store hoti hain. Reserved keys hide:{" "}
           <code>project_display_name</code>, <code>wir_title</code>, <code>request_note</code>,{" "}
           <code>contractor_required_actions</code>
         </p>

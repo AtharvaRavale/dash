@@ -1912,34 +1912,34 @@ function classifyLevel(name) {
   if (specialIndex !== -1) return { type: "special", specialIndex };
   return { type: "other" };
 }
-function formatLevelDisplayName(name) {
-  if (!name) return "";
+// function formatLevelDisplayName(name) {
+//   if (!name) return "";
 
-  // Basement: B001 → B1, B010 → B10
-  const basement = name.match(/^B0*([1-9]\d*)$/i);
-  if (basement) return `B${basement[1]}`;
+//   // Basement: B001 → B1, B010 → B10
+//   const basement = name.match(/^B0*([1-9]\d*)$/i);
+//   if (basement) return `B${basement[1]}`;
 
-  // Podium: P001 → Po1, P002 → Po2
-  const podium = name.match(/^P0*([1-9]\d*)$/i);
-  if (podium) return `Po${podium[1]}`;
+//   // Podium: P001 → Po1, P002 → Po2
+//   const podium = name.match(/^P0*([1-9]\d*)$/i);
+//   if (podium) return `Po${podium[1]}`;
 
-  // Parking: PK001 or PRK001 → Pk1
-  const parking = name.match(/^PK0*([1-9]\d*)$/i) || name.match(/^PRK0*([1-9]\d*)$/i);
-  if (parking) return `Pk${parking[1]}`;
+//   // Parking: PK001 or PRK001 → Pk1
+//   const parking = name.match(/^PK0*([1-9]\d*)$/i) || name.match(/^PRK0*([1-9]\d*)$/i);
+//   if (parking) return `Pk${parking[1]}`;
 
-  // Ground: G001 → G1, G002 → G2
-  const ground = name.match(/^G0*([1-9]\d*)$/i);
-  if (ground) return `G${ground[1]}`;
+//   // Ground: G001 → G1, G002 → G2
+//   const ground = name.match(/^G0*([1-9]\d*)$/i);
+//   if (ground) return `G${ground[1]}`;
 
-  // Terrace: T001 → T1, T002 → T2
-  const terrace = name.match(/^T0*([1-9]\d*)$/i);
-  if (terrace) return `T${terrace[1]}`;
+//   // Terrace: T001 → T1, T002 → T2
+//   const terrace = name.match(/^T0*([1-9]\d*)$/i);
+//   if (terrace) return `T${terrace[1]}`;
 
-  // Floor: Floor 3 → Floor 3 (leave as is)
-  // You may also want to handle "Floor 1" etc specially, add logic if needed.
+//   // Floor: Floor 3 → Floor 3 (leave as is)
+//   // You may also want to handle "Floor 1" etc specially, add logic if needed.
 
-  return name;
-}
+//   return name;
+// }
 // ---- helpers for project & role ----
 function resolveProjectId(projectIdFromState) {
   // 1) from route state (preferred)
@@ -2810,7 +2810,7 @@ useEffect(() => {
               {/* Enhanced Floor Info */}
               <div>
              <h3 className="text-xl font-bold mb-1" style={{ color: themeConfig.textPrimary }}>
-  {formatLevelDisplayName(level.name)}
+  {(level.name)}
 </h3>
 
 

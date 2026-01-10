@@ -13,6 +13,7 @@ import {
   signMIRProjectIncharge,
   updateMIR,
   uploadMIRLogo,
+  exportMIRPdf 
   
 } from "../api";
 
@@ -27,6 +28,16 @@ const parseNumber = (val) => {
   if (val === "" || val === null || val === undefined) return null;
   const num = Number(val);
   return Number.isNaN(num) ? null : num;
+};
+const downloadBlob = (blob, filename) => {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
 };
 
 export default function MIRDetailPage() {
@@ -209,7 +220,7 @@ export default function MIRDetailPage() {
       }
     } catch (err) {
       console.error("Failed to load MIR detail", err);
-      toast.error("MIR detail load nahi ho paayi.");
+      toast.error("Failed to load MIR detail");
     } finally {
       setLoading(false);
     }
@@ -221,21 +232,21 @@ export default function MIRDetailPage() {
 
   const handleAccept = async () => {
     if (!mir?.id) return;
-    if (!window.confirm("Is MIR ko ACCEPT karna hai?")) return;
+    if (!window.confirm("Confirm your decision")) return;
 
     try {
       setActionLoading(true);
       await acceptMIR(mir.id, {
         comment: "Accepted from detail page.",
       });
-      toast.success("MIR accept ho gaya.");
+      toast.success("MIR accepted");
       await fetchDetail();
     } catch (err) {
       console.error("Accept MIR error", err);
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "Accept karte time error aaya.";
+        "Accept MIR error";
       toast.error(msg);
     } finally {
       setActionLoading(false);
@@ -252,14 +263,14 @@ export default function MIRDetailPage() {
       await rejectMIR(mir.id, {
         comment: reason || "Rejected from detail page.",
       });
-      toast.success("MIR reject ho gaya.");
+      toast.success("MIR rejected");
       await fetchDetail();
     } catch (err) {
       console.error("Reject MIR error", err);
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "Reject karte time error aaya.";
+        "Reject MIR error";
       toast.error(msg);
     } finally {
       setActionLoading(false);
@@ -269,7 +280,7 @@ export default function MIRDetailPage() {
   const handleForward = async () => {
     if (!mir?.id) return;
     if (!selectedForwardUserId) {
-      toast.error("Pehle user select karo jise forward karna hai.");
+      toast.error("Select the user");
       return;
     }
 
@@ -279,7 +290,7 @@ export default function MIRDetailPage() {
         to_user_id: Number(selectedForwardUserId),
         comment: forwardComment || "",
       });
-      toast.success("MIR forward ho gaya.");
+      toast.success("MIR forwarded");
       setForwardComment("");
       await fetchDetail();
     } catch (err) {
@@ -287,7 +298,7 @@ export default function MIRDetailPage() {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "Forward karte time error aaya.";
+        "Forward MIR error";
       toast.error(msg);
     } finally {
       setActionLoading(false);
@@ -297,7 +308,7 @@ export default function MIRDetailPage() {
   const handleUploadAttachments = async () => {
     if (!mir?.id) return;
     if (!attachmentsFiles.length) {
-      toast.error("Pehle kam se kam ek file select karo.");
+      toast.error("Select atleast one file");
       return;
     }
 
@@ -312,7 +323,7 @@ export default function MIRDetailPage() {
         fd.append("description", attachmentDescription);
 
       await uploadMIRAttachments(mir.id, fd);
-      toast.success("Attachments upload ho gaye.");
+      toast.success("Attachments uploaded");
       setAttachmentsFiles([]);
       setAttachmentName("");
       setAttachmentDescription("");
@@ -322,7 +333,7 @@ export default function MIRDetailPage() {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "Attachments upload karte time error aaya.";
+        "Attachments upload error";
       toast.error(msg);
     } finally {
       setActionLoading(false);
@@ -333,7 +344,7 @@ export default function MIRDetailPage() {
     if (!mir?.id) return;
 
     if (!logoFile) {
-      toast.error("Pehle logo file select karo.");
+      toast.error("Select the logo file");
       return;
     }
 
@@ -343,7 +354,7 @@ export default function MIRDetailPage() {
       fd.append("logo", logoFile);
 
       await uploadMIRLogo(mir.id, fd);
-      toast.success("MIR logo upload/update ho gaya.");
+      toast.success("MIR logo upload/updated");
 
       setLogoFile(null);
       await fetchDetail();
@@ -352,7 +363,7 @@ export default function MIRDetailPage() {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "Logo upload karte time error aaya.";
+        "Logo upload error";
       toast.error(msg);
     } finally {
       setActionLoading(false);
@@ -362,7 +373,7 @@ export default function MIRDetailPage() {
   const handleStoreSignSave = async () => {
     if (!mir?.id) return;
     if (!storeSignFile) {
-      toast.error("Store team signature file/signature select karo.");
+      toast.error("Store team signature file/signature select");
       return;
     }
     try {
@@ -372,7 +383,7 @@ export default function MIRDetailPage() {
         sign_date: storeSignDate || undefined,
         file: storeSignFile,
       });
-      toast.success("Store signature save ho gayi.");
+      toast.success("Store signature saved");
       setStoreSignFile(null);
       await fetchDetail();
     } catch (err) {
@@ -380,7 +391,7 @@ export default function MIRDetailPage() {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "Store signature save karte time error aaya.";
+        "Store signature error";
       toast.error(msg);
     } finally {
       setActionLoading(false);
@@ -390,7 +401,7 @@ export default function MIRDetailPage() {
   const handleQcSignSave = async () => {
     if (!mir?.id) return;
     if (!qcSignFile) {
-      toast.error("QC team signature file/signature select karo.");
+      toast.error("QC team signature file/signature select");
       return;
     }
     try {
@@ -400,7 +411,7 @@ export default function MIRDetailPage() {
         sign_date: qcSignDate || undefined,
         file: qcSignFile,
       });
-      toast.success("QC signature save ho gayi.");
+      toast.success("QC signature saved");
       setQcSignFile(null);
       await fetchDetail();
     } catch (err) {
@@ -408,7 +419,7 @@ export default function MIRDetailPage() {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "QC signature save karte time error aaya.";
+        "QC signature error";
       toast.error(msg);
     } finally {
       setActionLoading(false);
@@ -418,7 +429,7 @@ export default function MIRDetailPage() {
   const handlePiSignSave = async () => {
     if (!mir?.id) return;
     if (!piSignFile) {
-      toast.error("Project incharge signature file/signature select karo.");
+      toast.error("Project incharge signature file/signature select");
       return;
     }
     try {
@@ -428,7 +439,7 @@ export default function MIRDetailPage() {
         sign_date: piSignDate || undefined,
         file: piSignFile,
       });
-      toast.success("Project incharge signature save ho gayi.");
+      toast.success("Project incharge signature saved");
       setPiSignFile(null);
       await fetchDetail();
     } catch (err) {
@@ -436,7 +447,7 @@ export default function MIRDetailPage() {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "Project incharge signature save karte time error aaya.";
+        "Project incharge signature error";
       toast.error(msg);
     } finally {
       setActionLoading(false);
@@ -500,7 +511,7 @@ export default function MIRDetailPage() {
     try {
       setActionLoading(true);
       await updateMIR(mir.id, payload);
-      toast.success("MIR details update ho gaye.");
+      toast.success("MIR details updated");
       setIsEditing(false);
       await fetchDetail();
     } catch (err) {
@@ -508,7 +519,7 @@ export default function MIRDetailPage() {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "MIR details update karte time error aaya.";
+        "Update MIR details error";
       toast.error(msg);
     } finally {
       setActionLoading(false);
@@ -516,71 +527,95 @@ export default function MIRDetailPage() {
   };
 
   // EXPORT PDF
-  const handleExportPdf = () => {
-    if (!pdfRef.current || !mir) {
-      toast.error("PDF content ready nahi hai.");
-      return;
-    }
+  const handleExportPdf = async () => {
+  if (!mir?.id) return;
 
-    try {
-      const printContents = pdfRef.current.innerHTML;
-      const win = window.open("", "", "height=800,width=1000");
+  try {
+    setActionLoading(true);
 
-      if (!win) {
-        toast.error("Popup blocked ho gaya. Please allow popups.");
-        return;
-      }
+    // ✅ api.js already downloads the pdf
+    await exportMIRPdf(mir.id, true); // includeAttachments = true
 
-      win.document.write(`
-      <html>
-        <head>
-          <title>MIR ${mir.mir_number || `#${mir.id}`}</title>
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 5mm;
-            }
-            * { box-sizing: border-box; }
-            html, body {
-              margin: 0;
-              padding: 0;
-            }
-            body {
-              font-family: Arial, sans-serif;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-            #mir-pdf-sheet {
-              page-break-inside: avoid;
-              break-inside: avoid;
-              margin-bottom: 0 !important;
-            }
-            #mir-pdf-sheet table {
-              border-collapse: collapse;
-              width: 100%;
-            }
-            #mir-pdf-sheet td {
-              border: 1px solid #000;
-              font-size: 9px !important;
-              padding: 2px 3px !important;
-              vertical-align: top;
-            }
-          </style>
-        </head>
-        <body>
-          ${printContents}
-        </body>
-      </html>
-    `);
+    toast.success("PDF downloaded.");
+  } catch (err) {
+    console.error("Export PDF error", err);
+    const msg =
+      err?.response?.data?.detail ||
+      err?.response?.data?.error ||
+      err?.message ||
+      "PDF export failed.";
+    toast.error(msg);
+  } finally {
+    setActionLoading(false);
+  }
+};
 
-      win.document.close();
-      win.focus();
-      win.print();
-    } catch (e) {
-      console.error("PDF export error", e);
-      toast.error("PDF export mein error aaya.");
-    }
-  };
+
+  // const handleExportPdf = () => {
+  //   if (!pdfRef.current || !mir) {
+  //     toast.error("PDF content ready nahi hai.");
+  //     return;
+  //   }
+
+  //   try {
+  //     const printContents = pdfRef.current.innerHTML;
+  //     const win = window.open("", "", "height=800,width=1000");
+
+  //     if (!win) {
+  //       toast.error("Popup blocked ho gaya. Please allow popups.");
+  //       return;
+  //     }
+
+  //     win.document.write(`
+  //     <html>
+  //       <head>
+  //         <title>MIR ${mir.mir_number || `#${mir.id}`}</title>
+  //         <style>
+  //           @page {
+  //             size: A4 portrait;
+  //             margin: 5mm;
+  //           }
+  //           * { box-sizing: border-box; }
+  //           html, body {
+  //             margin: 0;
+  //             padding: 0;
+  //           }
+  //           body {
+  //             font-family: Arial, sans-serif;
+  //             -webkit-print-color-adjust: exact;
+  //             print-color-adjust: exact;
+  //           }
+  //           #mir-pdf-sheet {
+  //             page-break-inside: avoid;
+  //             break-inside: avoid;
+  //             margin-bottom: 0 !important;
+  //           }
+  //           #mir-pdf-sheet table {
+  //             border-collapse: collapse;
+  //             width: 100%;
+  //           }
+  //           #mir-pdf-sheet td {
+  //             border: 1px solid #000;
+  //             font-size: 9px !important;
+  //             padding: 2px 3px !important;
+  //             vertical-align: top;
+  //           }
+  //         </style>
+  //       </head>
+  //       <body>
+  //         ${printContents}
+  //       </body>
+  //     </html>
+  //   `);
+
+  //     win.document.close();
+  //     win.focus();
+  //     win.print();
+  //   } catch (e) {
+  //     console.error("PDF export error", e);
+  //     toast.error("PDF export mein error aaya.");
+  //   }
+  // };
 
   if (loading) {
     return (

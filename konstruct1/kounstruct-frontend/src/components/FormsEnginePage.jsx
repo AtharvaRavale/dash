@@ -39,6 +39,45 @@ const styles = {
     fontSize: 12,
     color: "#6b7280",
   },
+  excelCell: (selected) => ({
+  border: `1px solid ${selected ? "#2563eb" : "#e5e7eb"}`,
+  borderRadius: 0,
+  backgroundColor: "#fff",
+  padding: 0,
+  cursor: "pointer",
+  minHeight: 26,
+  display: "flex",
+  alignItems: "stretch",
+}),
+excelHeaderCell: (selected) => ({
+  border: `1px solid ${selected ? "#2563eb" : "#e5e7eb"}`,
+  borderRadius: 0,
+  backgroundColor: "#f8fafc",
+  padding: "6px 8px",
+  fontSize: 12,
+  fontWeight: 600,
+  display: "flex",
+  alignItems: "center",
+}),
+excelInput: {
+  width: "100%",
+  height: "100%",
+  border: "none",
+  outline: "none",
+  padding: "6px 8px",
+  fontSize: 12,
+  background: "transparent",
+},
+excelSelect: {
+  width: "100%",
+  height: "100%",
+  border: "none",
+  outline: "none",
+  padding: "6px 8px",
+  fontSize: 12,
+  background: "transparent",
+},
+
   btnPrimary: {
     backgroundColor: "#2563eb",
     color: "#fff",
@@ -371,15 +410,16 @@ const FIELD_BLOCKS = [
   { type: "PHONE", label: "Phone", defaultLabel: "Phone" },
   { type: "EMAIL", label: "Email", defaultLabel: "Email" },
   { type: "DROPDOWN", label: "Dropdown", defaultLabel: "Select Option" },
-  { type: "SIGNATURE", label: "Signature", defaultLabel: "Signature" },
 ];
 
 const STATIC_BLOCKS = [
   { type: "STATIC_TEXT", label: "Static Text" },
-  { type: "IMAGE_LOGO", label: "Logo / Image" },
+  { type: "IMAGE_LOGO", label: "Logo / Image / Signature" },
 ];
 
 // --- helper: base schema ---
+const isSignatureLabel = (label) => /signature|sign\b/.test(String(label || "").toLowerCase());
+const isImageLikeLabel = (label) => /photo|photograph|image|pic|logo|stamp/.test(String(label || "").toLowerCase());
 
 const makeEmptySchema = (title = "") => ({
   title,
@@ -402,182 +442,33 @@ const makeEmptySchema = (title = "") => ({
   ],
 });
 
-/**
- * Excel-imported schema me auto FIELD blocks inject karo:
- * Pattern:
- *   LEFT cell = label (TEXT_STATIC / TEXT, with text)
- *   CURRENT cell = completely blank
- * => current cell me FIELD block create
- */
-// function injectAutoFieldsFromExcel(schema) {
-//   console.log("🔁 [injectAutoFieldsFromExcel] CALLED with schema:", schema);
-
-//   if (!schema || !Array.isArray(schema.sections) || !schema.excel_meta) {
-//     console.log(
-//       "🔁 [injectAutoFieldsFromExcel] -> returning original schema (no sections or no excel_meta)"
-//     );
-//     return schema;
-//   }
-
-//   console.log("📐 [injectAutoFieldsFromExcel] excel_meta:", schema.excel_meta);
-
-//   const next = {
-//     ...schema,
-//     sections: (schema.sections || []).map((sec, secIdx) => {
-//       console.log("➡️ [inject] visiting section", secIdx, sec);
-//       return {
-//         ...sec,
-//         rows: (sec.rows || []).map((row, rowIdx) => ({
-//           ...row,
-//           columns: (row.columns || []).map((col, cIdx) => {
-//             const blocks = Array.isArray(col.blocks) ? [...col.blocks] : [];
-//             console.log("   🔎 [inject] cell", {
-//               rowIdx,
-//               cIdx,
-//               excel_row: row.excel_row,
-//               excel_col: col.excel_col,
-//               existingBlocks: blocks,
-//             });
-//             return { ...col, blocks };
-//           }),
-//         })),
-//       };
-//     }),
-//   };
-
-//   next.sections.forEach((sec, secIdx) => {
-//     (sec.rows || []).forEach((row, rowIdx) => {
-//       const cols = row.columns || [];
-//       cols.forEach((col, cIdx) => {
-//         const blocks = col.blocks || [];
-
-//         const alreadyField = blocks.some(
-//           (b) => (b.block_type || "").toUpperCase() === "FIELD"
-//         );
-//         if (alreadyField) {
-//           console.log(
-//             "   ⏭️ [inject] skip cell (already has FIELD block)",
-//             { secIdx, rowIdx, cIdx, blocks }
-//           );
-//           return;
-//         }
-
-//         if (blocks.length > 0) {
-//           console.log(
-//             "   ⏭️ [inject] skip cell (has non-field blocks)",
-//             { secIdx, rowIdx, cIdx, blocks }
-//           );
-//           return;
-//         }
-
-//         if (cIdx === 0) return;
-
-//         const prevCol = cols[cIdx - 1];
-//         if (!prevCol) return;
-
-//         const prevBlocks = prevCol.blocks || [];
-//         const labelBlock = prevBlocks.find((b) => {
-//           const bt = (b.block_type || "").toUpperCase();
-//           const txt = b.text || b.label;
-//           if (!txt) return false;
-//           return bt === "TEXT_STATIC" || bt === "TEXT";
-//         });
-
-//         if (!labelBlock) return;
-
-//         const rawLabel = labelBlock.text || labelBlock.label || "";
-//         const labelText = String(rawLabel).trim();
-//         if (!labelText) return;
-
-//         const rowTag = row.excel_row || rowIdx + 1;
-//         const colTag = col.excel_col || cIdx + 1;
-//         const key = `cell_${rowTag}_${colTag}`;
-
-//         const isLogo = /logo|signature|stamp/i.test(labelText);
-//         const fieldType = isLogo ? "FILE" : "TEXT";
-
-//         const newBlock = {
-//           block_type: "FIELD",
-//           field: {
-//             key,
-//             label: labelText,
-//             type: fieldType,
-//             required: false,
-//             config: {
-//               hideLabel: true,
-//             },
-//           },
-//         };
-
-//         console.log("✅ [inject] ADD FIELD block in cell", {
-//           secIdx,
-//           rowIdx,
-//           cIdx,
-//           key,
-//           labelText,
-//           fieldType,
-//           newBlock,
-//         });
-
-//         col.blocks.push(newBlock);
-//       });
-//     });
-//   });
-
-//   console.log(
-//     "🎯 [injectAutoFieldsFromExcel] FINAL schema (after injection):",
-//     next
-//   );
-//   return next;
-// }
-
-
-/**
- * Excel se aaya hua schema:
- *  - Top area: "Revision No", "Project", "Date" waale rows
- *    (label | empty cell) -> right cell me FIELD bana do.
- *  - Table area: "SN | Description | Photograph | Name of Contractor | ..."
- *    header row detect karo, uske niche jitne blank rows hain
- *    un sab me har column ke liye FIELD bana do.
- */
 
 
 
-/**
- * Excel se aaya hua schema:
- *  - Top area: simple "label | value" rows → right cell me FIELD bana do.
- *  - Table area: header row detect karo (SN/Description/Photograph... ya
- *    MOM table: "Sr. No. | Description of Agenda | Brief details | ...")
- *    uske niche jitne rows hain unke HAR column ke liye FIELD bana do
- *    (existing TEXT_STATIC wagaira replace karke).
- */
 function injectAutoFieldsFromExcel(schema) {
-  console.log("🔁 [injectAutoFieldsFromExcel] CALLED with schema:", schema);
+  if (!schema || !Array.isArray(schema.sections) || !schema.excel_meta) return schema;
 
-  if (!schema || !Array.isArray(schema.sections) || !schema.excel_meta) {
-    console.log("🔁 [inject] no sections/excel_meta, returning original schema");
-    return schema;
-  }
+  const MIN_TABLE_BODY_ROWS = 20;
 
-  // --- helpers ---
   const cloneBlocks = (blocks) => (Array.isArray(blocks) ? [...blocks] : []);
 
   const isTextBlock = (b) => {
     if (!b) return false;
-    const bt = (b.block_type || b.blockType || "").toUpperCase();
-    const txt = b.text || b.label;
-    return !!txt && (bt === "TEXT_STATIC" || bt === "TEXT");
+    const bt = String(b.block_type || b.blockType || "").toUpperCase();
+    const txt = (b.text !== undefined && b.text !== null)
+      ? b.text
+      : (b.label !== undefined && b.label !== null ? b.label : "");
+    const s = String(txt).trim();
+    return !!s && (bt === "TEXT_STATIC" || bt === "TEXT");
   };
 
-  const hasFieldBlock = (col) =>
-    (col.blocks || []).some(
-      (b) => (b.block_type || "").toUpperCase() === "FIELD"
-    );
-
   const firstTextInCell = (col) => {
-    const blk = (col.blocks || []).find(isTextBlock);
+    const blk = (col && col.blocks ? col.blocks : []).find(isTextBlock);
     if (!blk) return "";
-    return String(blk.text || blk.label || "").trim();
+    const v = (blk.text !== undefined && blk.text !== null)
+      ? blk.text
+      : (blk.label !== undefined && blk.label !== null ? blk.label : "");
+    return String(v).trim();
   };
 
   const normalizeLabel = (label) =>
@@ -588,371 +479,300 @@ function injectAutoFieldsFromExcel(schema) {
       .toLowerCase();
 
   const guessTypeFromLabel = (label) => {
-    const l = (label || "").toLowerCase();
+    const l = String(label || "").toLowerCase();
     if (/date/.test(l)) return "DATE";
-    if (/amount|amt|debit|credit|qty|quantity|no\.?$|sr\.?$|sn$/.test(l))
-      return "NUMBER";
+    if (/amount|amt|debit|credit|qty|quantity|sn$|sr\s*no|s\s*no|no$/.test(l)) return "NUMBER";
     if (/photo|photograph|image|pic/.test(l)) return "FILE";
     if (/signature|logo|stamp/.test(l)) return "FILE";
     return "TEXT";
   };
 
-  const makeFieldBlock = (row, rowIdx, col, colIdx, labelText) => {
-    const rowTag = row.excel_row || rowIdx + 1;
-    const colTag = col.excel_col || colIdx + 1;
-    const key = `cell_${rowTag}_${colTag}`;
-    const fType = guessTypeFromLabel(labelText);
+  // const makeFieldBlock = (row, rowIdx, col, colIdx, labelText) => {
+  //   const rowTag = row.excel_row || rowIdx + 1;
+  //   const colTag = col.excel_col || colIdx + 1;
+  //   const key = `cell_${rowTag}_${colTag}`;
+  //   return {
+  //     block_type: "FIELD",
+  //     field: {
+  //       key,
+  //       label: labelText,
+  //       type: guessTypeFromLabel(labelText),
+  //       required: false,
+  //       config: { hideLabel: true },
+  //     },
+  //   };
+  // };
+const makeFieldBlock = (row, rowIdx, col, colIdx, labelText) => {
+  const rowTag = row.excel_row || rowIdx + 1;
+  const colTag = col.excel_col || colIdx + 1;
+  const key = `cell_${rowTag}_${colTag}`;
 
-    return {
-      block_type: "FIELD",
-      field: {
-        key,
-        label: labelText,
-        type: fType,
-        required: false,
-        config: {
-          hideLabel: true,
-        },
-      },
-    };
+  const sig = isSignatureLabel(labelText);
+  const img = isImageLikeLabel(labelText);
+
+  const type = sig ? "FILE" : (img ? "FILE" : guessTypeFromLabel(labelText));
+
+  const config = {
+    hideLabel: true,
+    ...(sig ? { fileKind: "SIGNATURE", accept: "image/*" } : {}),
   };
 
-  // --- deep clone sections so we can mutate safely ---
-  const next = {
-    ...schema,
-    sections: (schema.sections || []).map((sec) => ({
+  return {
+    block_type: "FIELD",
+    field: { key, label: labelText, type, required: false, config },
+  };
+};
+
+  // ✅ IMPORTANT: this must end with "});" (NO extra ')')
+  const deepCloneSchema = (s) => ({
+    ...s,
+    sections: (s.sections || []).map((sec) => ({
       ...sec,
       rows: (sec.rows || []).map((row) => ({
         ...row,
-        columns: (row.columns || row.blocks || row.cols || []).map((col) => ({
+        columns: (row.columns || row.cols || row.blocks || []).map((col) => ({
           ...col,
           blocks: cloneBlocks(col.blocks),
         })),
       })),
     })),
+  });
+
+  const next = deepCloneSchema(schema);
+
+  const looksLikeTableHeader = (rows, rIdx) => {
+    const row = rows[rIdx];
+    const nextRow = rows[rIdx + 1];
+    if (!row || !nextRow) return false;
+
+    const labels = (row.columns || []).map((c) => firstTextInCell(c)).filter(Boolean);
+    if (labels.length < 3) return false;
+
+    const nextVals = (nextRow.columns || []).map((c) => firstTextInCell(c));
+    const emptyCount = nextVals.filter((v) => !String(v || "").trim()).length;
+    const emptyRatio = emptyCount / Math.max(1, nextVals.length);
+    if (emptyRatio < 0.6) return false;
+
+    const avgLen = labels.reduce((a, b) => a + b.length, 0) / labels.length;
+    return avgLen <= 30;
   };
 
-  // ------------------------------------------------------------------
-  // PER SECTION PROCESSING
-  // ------------------------------------------------------------------
-  next.sections.forEach((sec, secIdx) => {
+  const findSerialColIndex = (headerLabels) => {
+    const serialPatterns = ["sn", "sr no", "sr no.", "srno", "s no", "sno", "sr number", "serial no"];
+    for (let i = 0; i < headerLabels.length; i++) {
+      const n = normalizeLabel(headerLabels[i]);
+      if (serialPatterns.includes(n)) return i;
+    }
+    return -1;
+  };
+
+  const isNumericLike = (v) => {
+    const s = String(v || "").trim();
+    if (!s) return true;
+    return !isNaN(Number(s));
+  };
+
+  const breakVerticalMergesInRange = (rows, startIdx, endIdx) => {
+    for (let r = startIdx; r <= endIdx; r++) {
+      const row = rows[r];
+      if (!row) continue;
+      const cols = row.columns || [];
+      for (let c = 0; c < cols.length; c++) {
+        const col = cols[c];
+        const m = col && col.merge ? col.merge : null;
+        if (!m || !m.is_merged) continue;
+
+        const rowSpan = m.row_span || 1;
+        const colSpan = m.col_span || 1;
+        const isTopLeft = m.is_top_left !== false;
+
+        if (rowSpan > 1 && isTopLeft) {
+          if (colSpan > 1) {
+            col.merge = { ...m, row_span: 1, is_top_left: true };
+          } else {
+            col.merge = null;
+          }
+
+          for (let k = 1; k < rowSpan; k++) {
+            const rr = r + k;
+            if (rr > endIdx) break;
+            const targetRow = rows[rr];
+            if (!targetRow || !targetRow.columns || !targetRow.columns[c]) continue;
+            targetRow.columns[c].merge = null;
+          }
+        }
+
+        if (rowSpan > 1 && !isTopLeft) {
+          col.merge = null;
+        }
+      }
+    }
+  };
+
+  next.sections.forEach((sec) => {
     const rows = sec.rows || [];
+    if (!rows.length) return;
 
-    // ---------- 1) SIMPLE "LABEL | VALUE" ROWS (top side) ----------
-    rows.forEach((row, rIdx) => {
-      const cols = row.columns || [];
-      cols.forEach((col, cIdx) => {
-        const blocks = col.blocks || [];
-
-        // already has a FIELD? leave it
-        if (hasFieldBlock(col)) return;
-
-        // non-empty (text/image) cell? skip for this top-area rule
-        if (blocks.length > 0) return;
-
-        // first column me kabhi bhi auto field nahi banaate
-        if (cIdx === 0) return;
-
-        const leftCol = cols[cIdx - 1];
-        if (!leftCol) return;
-
-        const leftLabel = firstTextInCell(leftCol);
-        if (!leftLabel) return;
-
-        const newBlock = makeFieldBlock(row, rIdx, col, cIdx, leftLabel);
-
-        console.log("✅ [inject] HORIZ field", {
-          secIdx,
-          rIdx,
-          cIdx,
-          label: leftLabel,
-          key: newBlock.field.key,
-          type: newBlock.field.type,
-        });
-
-        // is cell me sirf yahi FIELD hoga (pure empty box)
-        col.blocks = [newBlock];
-      });
-    });
-
-    // ---------- 2) TABLE HEADER DETECTION ----------
     let headerRowIdx = -1;
+    let bestScore = -1;
 
-    rows.forEach((row, rIdx) => {
-      const cols = row.columns || [];
-      const labels = cols.map((col) => firstTextInCell(col));
-      const normSet = new Set(
-        labels.filter(Boolean).map((lbl) => normalizeLabel(lbl))
-      );
+    for (let rIdx = 0; rIdx < rows.length - 1; rIdx++) {
+      if (!looksLikeTableHeader(rows, rIdx)) continue;
 
-      // Old pattern: SN | Description | Photograph | Name of Contractor ...
-      const isOldTableHeader =
-        normSet.has("sn") &&
-        normSet.has("description") &&
-        Array.from(normSet).some((x) => x.includes("photograph"));
+      const labels = (rows[rIdx].columns || []).map((c) => firstTextInCell(c));
+      const labelCount = labels.filter(Boolean).length;
+      const bonus = labels.some((t) => /sr\s*no|sn\b/i.test(String(t))) ? 2 : 0;
+      const score = labelCount + bonus;
 
-      // MOM pattern: Sr. No. | Description of Agenda | Brief details | ...
-      const hasSrNo =
-        normSet.has("sr no") ||
-        normSet.has("sr no.") ||
-        normSet.has("srno") ||
-        normSet.has("sr number");
-      const isMomHeader =
-        hasSrNo && normSet.has("description of agenda") && normSet.has("brief details");
-
-      if (isOldTableHeader || isMomHeader) {
+      if (score > bestScore) {
+        bestScore = score;
         headerRowIdx = rIdx;
       }
-    });
+    }
 
+    // If no table header found, do label|value injection for whole section
     if (headerRowIdx === -1) {
-      console.log(
-        "ℹ️ [inject] no table header row found in section",
-        secIdx
-      );
+      rows.forEach((row, rIdx) => {
+        const cols = row.columns || [];
+        cols.forEach((col, cIdx) => {
+          if (cIdx === 0) return;
+          const blocks = col.blocks || [];
+          if (blocks.some((b) => String(b.block_type || "").toUpperCase() === "FIELD")) return;
+          if (blocks.length > 0) return;
+
+          const left = cols[cIdx - 1];
+          const leftLabel = firstTextInCell(left);
+          if (!leftLabel) return;
+
+          col.blocks = [makeFieldBlock(row, rIdx, col, cIdx, leftLabel)];
+        });
+      });
       return;
     }
 
-    console.log("📊 [inject] table header detected in section", secIdx, {
-      headerRowIdx,
-    });
-
     const headerRow = rows[headerRowIdx];
-    const headerCols = headerRow.columns || [];
-    const headerLabels = headerCols.map((col) => firstTextInCell(col));
+    const headerLabels = (headerRow.columns || []).map((c) => firstTextInCell(c));
+    const serialColIdx = findSerialColIndex(headerLabels);
 
-    // ---------- 3) FOR ALL ROWS BELOW HEADER: EVERY CELL = FIELD ----------
-    for (let rIdx = headerRowIdx + 1; rIdx < rows.length; rIdx++) {
+    let bodyStart = headerRowIdx + 1;
+    let bodyEnd = rows.length - 1;
+
+    // stop before footer (Prepared by etc) using serial column
+    if (serialColIdx !== -1) {
+      for (let rIdx = bodyStart; rIdx < rows.length; rIdx++) {
+        const snText = firstTextInCell(rows[rIdx] && rows[rIdx].columns ? rows[rIdx].columns[serialColIdx] : null);
+        if (!isNumericLike(snText)) {
+          bodyEnd = rIdx - 1;
+          break;
+        }
+      }
+    }
+
+    if (bodyEnd < bodyStart) bodyEnd = bodyStart;
+
+    const existingBodyCount = bodyEnd - bodyStart + 1;
+    if (existingBodyCount < MIN_TABLE_BODY_ROWS) {
+      const templateRow = rows[bodyStart] || rows[headerRowIdx];
+      const templateCols = (templateRow && templateRow.columns ? templateRow.columns : []).map((c) => ({
+        ...c,
+        blocks: [],
+        merge:
+          c && c.merge && c.merge.is_merged && (c.merge.col_span || 1) > 1
+            ? { ...c.merge, row_span: 1, is_top_left: c.merge.is_top_left !== false }
+            : null,
+      }));
+
+      const insertAt = bodyEnd + 1;
+      const excelBase = (templateRow && templateRow.excel_row) ? templateRow.excel_row : bodyStart + 1;
+
+      for (let i = 0; i < MIN_TABLE_BODY_ROWS - existingBodyCount; i++) {
+        rows.splice(insertAt + i, 0, {
+          id: `auto_row_${Date.now()}_${i}`,
+          excel_row: excelBase + existingBodyCount + i,
+          height: (templateRow && templateRow.height) ? templateRow.height : 20,
+          columns: templateCols.map((c) => ({ ...c, blocks: [] })),
+        });
+      }
+
+      bodyEnd = bodyStart + MIN_TABLE_BODY_ROWS - 1;
+    }
+
+    breakVerticalMergesInRange(rows, bodyStart, bodyEnd);
+
+    // inject FIELD in body
+    for (let rIdx = bodyStart; rIdx <= bodyEnd; rIdx++) {
       const row = rows[rIdx];
       const cols = row.columns || [];
-
       cols.forEach((col, cIdx) => {
         const labelText = headerLabels[cIdx];
-        if (!labelText) return; // koi header hi nahi is column ka
+        if (!labelText) return;
 
-        const newBlock = makeFieldBlock(row, rIdx, col, cIdx, labelText);
+        const m = col.merge || {};
+        const isMerged = !!m.is_merged;
+        const isTopLeft = m.is_top_left !== false;
 
-        console.log("✅ [inject] TABLE field (full-grid)", {
-          secIdx,
-          rIdx,
-          cIdx,
-          headerLabel: labelText,
-          key: newBlock.field.key,
-          type: newBlock.field.type,
-        });
+        if (isMerged && !isTopLeft) return;
 
-        // IMPORTANT: yahan hum purane TEXT_STATIC / sample text ko
-        // replace kar rahe hain. Cell me sirf FIELD block rahega.
-        col.blocks = [newBlock];
+        col.blocks = [makeFieldBlock(row, rIdx, col, cIdx, labelText)];
+      });
+    }
+
+    // top area (above header) label|value injection
+    for (let rIdx = 0; rIdx < headerRowIdx; rIdx++) {
+      const row = rows[rIdx];
+      const cols = row.columns || [];
+      cols.forEach((col, cIdx) => {
+        if (cIdx === 0) return;
+
+        const blocks = col.blocks || [];
+        if (blocks.some((b) => String(b.block_type || "").toUpperCase() === "FIELD")) return;
+        if (blocks.length > 0) return;
+
+        const left = cols[cIdx - 1];
+        const leftLabel = firstTextInCell(left);
+        if (!leftLabel) return;
+
+        col.blocks = [makeFieldBlock(row, rIdx, col, cIdx, leftLabel)];
       });
     }
   });
 
-  console.log(
-    "🎯 [injectAutoFieldsFromExcel] FINAL schema after injection:",
-    next
-  );
   return next;
 }
 
 
-
-
-// function injectAutoFieldsFromExcel(schema) {
-//   console.log("🔁 [injectAutoFieldsFromExcel] CALLED with schema:", schema);
-
-//   if (!schema || !Array.isArray(schema.sections) || !schema.excel_meta) {
-//     console.log("🔁 [inject] no sections/excel_meta, returning original schema");
-//     return schema;
-//   }
-
-//   // --- helpers ---
-//   const cloneBlocks = (blocks) => (Array.isArray(blocks) ? [...blocks] : []);
-
-//   const isTextBlock = (b) => {
-//     if (!b) return false;
-//     const bt = (b.block_type || b.blockType || "").toUpperCase();
-//     const txt = b.text || b.label;
-//     return !!txt && (bt === "TEXT_STATIC" || bt === "TEXT");
-//   };
-
-//   const hasFieldBlock = (col) =>
-//     (col.blocks || []).some(
-//       (b) => (b.block_type || "").toUpperCase() === "FIELD"
-//     );
-
-//   const firstTextInCell = (col) => {
-//     const blk = (col.blocks || []).find(isTextBlock);
-//     if (!blk) return "";
-//     return String(blk.text || blk.label || "").trim();
-//   };
-
-//   const guessTypeFromLabel = (label) => {
-//     const l = (label || "").toLowerCase();
-//     if (/date/.test(l)) return "DATE";
-//     if (/amount|amt|debit|credit|qty|quantity|no\.?$|sr\.?$|sn$/.test(l))
-//       return "NUMBER";
-//     if (/photo|photograph|image|pic/.test(l)) return "FILE";
-//     if (/signature|logo|stamp/.test(l)) return "FILE";
-//     return "TEXT";
-//   };
-
-//   const makeFieldBlock = (row, rowIdx, col, colIdx, labelText) => {
-//     const rowTag = row.excel_row || rowIdx + 1;
-//     const colTag = col.excel_col || colIdx + 1;
-//     const key = `cell_${rowTag}_${colTag}`;
-//     const fType = guessTypeFromLabel(labelText);
-
-//     return {
-//       block_type: "FIELD",
-//       field: {
-//         key,
-//         label: labelText,
-//         type: fType,
-//         required: false,
-//         config: {
-//           hideLabel: true,
-//         },
-//       },
-//     };
-//   };
-
-//   // --- deep clone sections/rows/columns so we can mutate safely ---
-//   const next = {
-//     ...schema,
-//     sections: (schema.sections || []).map((sec, sIdx) => ({
-//       ...sec,
-//       rows: (sec.rows || []).map((row, rIdx) => ({
-//         ...row,
-//         columns: (row.columns || row.blocks || row.cols || []).map(
-//           (col, cIdx) => ({
-//             ...col,
-//             blocks: cloneBlocks(col.blocks),
-//           })
-//         ),
-//       })),
-//     })),
-//   };
-
-//   // ------------------------------------------------------------------
-//   // PER SECTION PROCESSING
-//   // ------------------------------------------------------------------
-//   next.sections.forEach((sec, secIdx) => {
-//     const rows = sec.rows || [];
-
-//     // ---------- 1) SIMPLE "LABEL | VALUE" ROWS (top area) ----------
-//     rows.forEach((row, rIdx) => {
-//       const cols = row.columns || [];
-//       cols.forEach((col, cIdx) => {
-//         const blocks = col.blocks || [];
-
-//         // already has a FIELD? leave it
-//         if (hasFieldBlock(col)) return;
-
-//         // non-empty (text/image) cell? skip
-//         if (blocks.length > 0) return;
-
-//         // first column me kabhi bhi auto field nahi banaate
-//         if (cIdx === 0) return;
-
-//         const leftCol = cols[cIdx - 1];
-//         if (!leftCol) return;
-
-//         const leftLabel = firstTextInCell(leftCol);
-//         if (!leftLabel) return;
-
-//         const newBlock = makeFieldBlock(row, rIdx, col, cIdx, leftLabel);
-
-//         console.log("✅ [inject] HORIZ field", {
-//           secIdx,
-//           rIdx,
-//           cIdx,
-//           label: leftLabel,
-//           key: newBlock.field.key,
-//           type: newBlock.field.type,
-//         });
-
-//         col.blocks.push(newBlock);
-//       });
-//     });
-
-//     // ---------- 2) TABLE HEADER DETECTION ("SN | Description | ...") ----------
-//     let headerRowIdx = -1;
-
-//     rows.forEach((row, rIdx) => {
-//       const cols = row.columns || [];
-//       const labels = cols.map((col) => firstTextInCell(col));
-//       const labelSet = new Set(labels.filter(Boolean));
-
-//       if (
-//         labelSet.has("SN") &&
-//         labelSet.has("Description") &&
-//         labelSet.has("Photograph") &&
-//         (labelSet.has("Name of Contractor") ||
-//           labelSet.has("Name of\nContractor"))
-//       ) {
-//         headerRowIdx = rIdx;
-//       }
-//     });
-
-//     if (headerRowIdx === -1) {
-//       console.log(
-//         "ℹ️ [inject] no table header row found in section",
-//         secIdx
-//       );
-//       return;
-//     }
-
-//     console.log("📊 [inject] table header detected in section", secIdx, {
-//       headerRowIdx,
-//     });
-
-//     const headerRow = rows[headerRowIdx];
-//     const headerCols = headerRow.columns || [];
-//     const headerLabels = headerCols.map((col) => firstTextInCell(col));
-
-//     // ---------- 3) FOR ALL ROWS BELOW HEADER, MAKE FIELDS IN EVERY BLANK CELL ----------
-//     for (let rIdx = headerRowIdx + 1; rIdx < rows.length; rIdx++) {
-//       const row = rows[rIdx];
-//       const cols = row.columns || [];
-
-//       cols.forEach((col, cIdx) => {
-//         const labelText = headerLabels[cIdx];
-//         if (!labelText) return;
-
-//         const blocks = col.blocks || [];
-
-//         // already some field in this cell? skip
-//         if (hasFieldBlock(col)) return;
-
-//         // if cell already has text/image, skip (maybe footer)
-//         const hasNonFieldBlock = blocks.some((b) => !isTextBlock(b));
-//         if (hasNonFieldBlock) return;
-
-//         const newBlock = makeFieldBlock(row, rIdx, col, cIdx, labelText);
-
-//         console.log("✅ [inject] TABLE field", {
-//           secIdx,
-//           rIdx,
-//           cIdx,
-//           headerLabel: labelText,
-//           key: newBlock.field.key,
-//           type: newBlock.field.type,
-//         });
-
-//         col.blocks.push(newBlock);
-//       });
-//     }
-//   });
-
-//   console.log(
-//     "🎯 [injectAutoFieldsFromExcel] FINAL schema after injection:",
-//     next
-//   );
-//   return next;
-// }
-
 // ---------- Builder component ----------
+const buildExcelColMap = (sec) => {
+  const rows = sec?.rows || [];
+  const nCols = rows[0]?.columns?.length || 0;
+  const keep = Array(nCols).fill(false);
+
+  for (const row of rows) {
+    const cols = row?.columns || [];
+    for (let c = 0; c < nCols; c++) {
+      const col = cols[c];
+      const m = col?.merge;
+      const isMerged = !!m?.is_merged;
+      const isTopLeft = m?.is_top_left !== false;
+      const renderable = !(isMerged && !isTopLeft);
+      if (renderable) keep[c] = true;
+    }
+  }
+
+  const map = Array(nCols).fill(-1);
+  let idx = 0;
+  for (let c = 0; c < nCols; c++) {
+    if (keep[c]) map[c] = idx++;
+  }
+
+  return { keep, map, keptCount: idx };
+};
+
+const spanOnKept = (keep, start, span) => {
+  let count = 0;
+  for (let i = start; i < start + span; i++) if (keep[i]) count++;
+  return count || 1;
+};
 
 const FormsBuilder = ({ template, onBack, onSaved }) => {
   const isEdit = !!template;
@@ -963,99 +783,154 @@ const FormsBuilder = ({ template, onBack, onSaved }) => {
   const [schema, setSchema] = useState(makeEmptySchema(template?.name || ""));
   const [selectedPos, setSelectedPos] = useState(null); // {sectionIndex,rowIndex,colIndex,blockIndex}
 
+  const normalizeSignatureToFile = (s) => {
+  if (!s?.sections) return s;
+  const next = JSON.parse(JSON.stringify(s));
+
+  next.sections.forEach((sec) => {
+    (sec.rows || []).forEach((row) => {
+      (row.columns || []).forEach((col) => {
+        (col.blocks || []).forEach((blk) => {
+          if (String(blk?.block_type || "").toUpperCase() !== "FIELD") return;
+          const t = String(blk?.field?.type || "").toUpperCase();
+          if (t === "SIGNATURE") {
+            blk.field.type = "FILE";
+            blk.field.config = { ...(blk.field.config || {}), fileKind: "SIGNATURE", accept: "image/*" };
+          }
+        });
+      });
+    });
+  });
+
+  return next;
+};
+
+
   // ── helper: render correct preview control based on field.type ──
-  const renderFieldControl = (field) => {
-    const fType = (field?.type || "TEXT").toUpperCase();
+  const renderFieldControl = (field, opts = {}) => {
+  const compact = !!opts.compact;
+  const fType = (field?.type || "TEXT").toUpperCase();
+  const inputStyle = compact ? styles.excelInput : styles.fieldPreviewInput;
 
-    if (fType === "DATE") {
-      return <input style={styles.fieldPreviewInput} type="date" />;
-    }
+  if (fType === "DATE") return <input style={inputStyle} type="date" />;
+  if (fType === "NUMBER") return <input style={inputStyle} type="number" />;
 
-    if (fType === "NUMBER") {
-      return (
-        <input
-          style={styles.fieldPreviewInput}
-          type="number"
-          placeholder="0"
-        />
-      );
-    }
+  if (fType === "EMAIL") return <input style={inputStyle} type="email" />;
+  if (fType === "PHONE") return <input style={inputStyle} type="tel" />;
 
-    if (fType === "EMAIL") {
-      return (
-        <input
-          style={styles.fieldPreviewInput}
-          type="email"
-          placeholder="name@example.com"
-        />
-      );
-    }
-
-    if (fType === "PHONE") {
-      return (
-        <input
-          style={styles.fieldPreviewInput}
-          type="tel"
-          placeholder="Mobile / Phone"
-        />
-      );
-    }
-
-    if (fType === "DROPDOWN") {
-      return (
-        <select style={styles.fieldPreviewInput}>
-          <option>Sample option 1</option>
-          <option>Sample option 2</option>
-        </select>
-      );
-    }
-
-    if (fType === "FILE") {
-      return (
-        <div
-          style={{
-            fontSize: 11,
-            color: "#6b7280",
-            borderRadius: 6,
-            border: "1px dashed #d1d5db",
-            padding: "6px 8px",
-            backgroundColor: "#f9fafb",
-          }}
-        >
-          <div>File upload field (logo / signature / document)</div>
-          <div style={{ marginTop: 4, fontSize: 10 }}>
-            Preview only – actual upload user side pe hoga.
-          </div>
-        </div>
-      );
-    }
-
-    if (fType === "SIGNATURE") {
-      return (
-        <div
-          style={{
-            fontSize: 11,
-            color: "#6b7280",
-            borderRadius: 6,
-            border: "1px dashed #d1d5db",
-            padding: "10px 8px",
-            backgroundColor: "#f9fafb",
-          }}
-        >
-          Signature pad / upload placeholder
-        </div>
-      );
-    }
-
-    // default TEXT
+  if (fType === "DROPDOWN") {
     return (
-      <input
-        style={styles.fieldPreviewInput}
-        type="text"
-        placeholder={field?.type || "Text"}
-      />
+      <select style={compact ? styles.excelSelect : styles.fieldPreviewInput}>
+        <option value=""></option>
+        <option>Sample option 1</option>
+        <option>Sample option 2</option>
+      </select>
     );
-  };
+  }
+
+  if (fType === "FILE" || fType === "SIGNATURE") {
+    return (
+      <div style={{ padding: "6px 8px", fontSize: 11, color: "#6b7280" }}>
+        Upload
+      </div>
+    );
+  }
+
+  return <input style={inputStyle} type="text" />;
+};
+
+  // const renderFieldControl = (field) => {
+  //   const fType = (field?.type || "TEXT").toUpperCase();
+
+  //   if (fType === "DATE") {
+  //     return <input style={styles.fieldPreviewInput} type="date" />;
+  //   }
+
+  //   if (fType === "NUMBER") {
+  //     return (
+  //       <input
+  //         style={styles.fieldPreviewInput}
+  //         type="number"
+  //         placeholder="0"
+  //       />
+  //     );
+  //   }
+
+  //   if (fType === "EMAIL") {
+  //     return (
+  //       <input
+  //         style={styles.fieldPreviewInput}
+  //         type="email"
+  //         placeholder="name@example.com"
+  //       />
+  //     );
+  //   }
+
+  //   if (fType === "PHONE") {
+  //     return (
+  //       <input
+  //         style={styles.fieldPreviewInput}
+  //         type="tel"
+  //         placeholder="Mobile / Phone"
+  //       />
+  //     );
+  //   }
+
+  //   if (fType === "DROPDOWN") {
+  //     return (
+  //       <select style={styles.fieldPreviewInput}>
+  //         <option>Sample option 1</option>
+  //         <option>Sample option 2</option>
+  //       </select>
+  //     );
+  //   }
+
+  //   if (fType === "FILE") {
+  //     return (
+  //       <div
+  //         style={{
+  //           fontSize: 11,
+  //           color: "#6b7280",
+  //           borderRadius: 6,
+  //           border: "1px dashed #d1d5db",
+  //           padding: "6px 8px",
+  //           backgroundColor: "#f9fafb",
+  //         }}
+  //       >
+  //         <div>File upload field (logo / signature / document)</div>
+  //         <div style={{ marginTop: 4, fontSize: 10 }}>
+  //           Preview only – actual upload user side pe hoga.
+  //         </div>
+  //       </div>
+  //     );
+  //   }
+
+  //   if (fType === "SIGNATURE") {
+  //     return (
+  //       <div
+  //         style={{
+  //           fontSize: 11,
+  //           color: "#6b7280",
+  //           borderRadius: 6,
+  //           border: "1px dashed #d1d5db",
+  //           padding: "10px 8px",
+  //           backgroundColor: "#f9fafb",
+  //         }}
+  //       >
+  //         Signature pad / upload placeholder
+  //       </div>
+  //     );
+  //   }
+
+  //   // default TEXT
+  //   return (
+  //     <input
+  //       style={styles.fieldPreviewInput}
+  //       type="text"
+  //       placeholder={field?.type || "Text"}
+  //     />
+  //   );
+  // };
 
   // load existing schema if editing
   useEffect(() => {
@@ -1112,68 +987,119 @@ const FormsBuilder = ({ template, onBack, onSaved }) => {
   };
 
   // ---- add field / static into selected cell ----
-
   const handleAddFieldBlock = (blockDef) => {
-    setSchema((prev) => {
-      const base = ensureSchema(prev);
-      const sections = [...base.sections];
-      const secIdx = 0;
-      const section = { ...sections[secIdx] };
-      const rows = section.rows ? [...section.rows] : [];
+  setSchema((prev) => {
+    const base = ensureSchema(prev);
+    const sections = [...base.sections];
+    const secIdx = 0;
+    const section = { ...sections[secIdx] };
+    const rows = section.rows ? [...section.rows] : [];
 
-      if (!rows.length) {
-        rows.push({
-          id: "row_1",
-          columns: [{ width: 12, blocks: [] }],
-        });
-      }
+    if (!rows.length) {
+      rows.push({ id: "row_1", columns: [{ width: 12, blocks: [] }] });
+    }
 
-      let rowIndex = 0;
-      let colIndex = 0;
+    let rowIndex = 0;
+    let colIndex = 0;
 
-      if (
-        selectedPos &&
-        selectedPos.sectionIndex === secIdx &&
-        rows[selectedPos.rowIndex]
-      ) {
-        rowIndex = selectedPos.rowIndex;
-        const rowTmp = rows[rowIndex];
-        if (rowTmp.columns && rowTmp.columns[selectedPos.colIndex]) {
-          colIndex = selectedPos.colIndex;
-        }
-      }
+    if (selectedPos && selectedPos.sectionIndex === secIdx && rows[selectedPos.rowIndex]) {
+      rowIndex = selectedPos.rowIndex;
+      const rowTmp = rows[rowIndex];
+      if (rowTmp.columns && rowTmp.columns[selectedPos.colIndex]) colIndex = selectedPos.colIndex;
+    }
 
-      const row = { ...rows[rowIndex] };
-      const cols = row.columns ? [...row.columns] : [{ width: 12, blocks: [] }];
+    const row = { ...rows[rowIndex] };
+    const cols = row.columns ? [...row.columns] : [{ width: 12, blocks: [] }];
+    if (!cols.length) cols.push({ width: 12, blocks: [] });
+    if (colIndex >= cols.length) colIndex = 0;
 
-      if (!cols.length) {
-        cols.push({ width: 12, blocks: [] });
-      }
+    const col = { ...cols[colIndex] };
 
-      if (colIndex >= cols.length) colIndex = 0;
+    const newBlock = {
+      block_type: "FIELD",
+      field: {
+        key: `${blockDef.type.toLowerCase()}_${Date.now()}`,
+        label: blockDef.defaultLabel,
+        type: blockDef.type,
+        required: false,
+        // ✅ config add
+        config: { ...(blockDef.config || {}) },
+      },
+    };
 
-      const col = { ...cols[colIndex] };
-      const newBlock = {
-        block_type: "FIELD",
-        field: {
-          key: `${blockDef.type.toLowerCase()}_${Date.now()}`,
-          label: blockDef.defaultLabel,
-          type: blockDef.type,
-          required: false,
-        },
-      };
+    col.blocks = [newBlock];
+    cols[colIndex] = col;
+    row.columns = cols;
+    rows[rowIndex] = row;
+    section.rows = rows;
+    sections[secIdx] = section;
 
-      col.blocks = [newBlock];
+    return { ...base, sections };
+  });
+};
 
-      cols[colIndex] = col;
-      row.columns = cols;
-      rows[rowIndex] = row;
-      section.rows = rows;
-      sections[secIdx] = section;
 
-      return { ...base, sections };
-    });
-  };
+  // const handleAddFieldBlock = (blockDef) => {
+  //   setSchema((prev) => {
+  //     const base = ensureSchema(prev);
+  //     const sections = [...base.sections];
+  //     const secIdx = 0;
+  //     const section = { ...sections[secIdx] };
+  //     const rows = section.rows ? [...section.rows] : [];
+
+  //     if (!rows.length) {
+  //       rows.push({
+  //         id: "row_1",
+  //         columns: [{ width: 12, blocks: [] }],
+  //       });
+  //     }
+
+  //     let rowIndex = 0;
+  //     let colIndex = 0;
+
+  //     if (
+  //       selectedPos &&
+  //       selectedPos.sectionIndex === secIdx &&
+  //       rows[selectedPos.rowIndex]
+  //     ) {
+  //       rowIndex = selectedPos.rowIndex;
+  //       const rowTmp = rows[rowIndex];
+  //       if (rowTmp.columns && rowTmp.columns[selectedPos.colIndex]) {
+  //         colIndex = selectedPos.colIndex;
+  //       }
+  //     }
+
+  //     const row = { ...rows[rowIndex] };
+  //     const cols = row.columns ? [...row.columns] : [{ width: 12, blocks: [] }];
+
+  //     if (!cols.length) {
+  //       cols.push({ width: 12, blocks: [] });
+  //     }
+
+  //     if (colIndex >= cols.length) colIndex = 0;
+
+  //     const col = { ...cols[colIndex] };
+  //     const newBlock = {
+  //       block_type: "FIELD",
+  //       field: {
+  //         key: `${blockDef.type.toLowerCase()}_${Date.now()}`,
+  //         label: blockDef.defaultLabel,
+  //         type: blockDef.type,
+  //         required: false,
+  //       },
+  //     };
+
+  //     col.blocks = [newBlock];
+
+  //     cols[colIndex] = col;
+  //     row.columns = cols;
+  //     rows[rowIndex] = row;
+  //     section.rows = rows;
+  //     sections[secIdx] = section;
+
+  //     return { ...base, sections };
+  //   });
+  // };
 
   const handleAddStaticBlock = (blockDef) => {
     setSchema((prev) => {
@@ -1404,6 +1330,8 @@ const FormsBuilder = ({ template, onBack, onSaved }) => {
     });
   };
 
+  
+
   const updateSelectedField = (updates) => {
     if (!selectedInfo || !selectedBlock) return;
     const { sectionIndex, rowIndex, colIndex, blockIndex } = selectedInfo;
@@ -1417,6 +1345,7 @@ const FormsBuilder = ({ template, onBack, onSaved }) => {
       const col = { ...cols[colIndex] };
       const blocks = [...(col.blocks || [])];
       const block = { ...blocks[blockIndex] };
+
 
       if (block.block_type === "FIELD") {
         block.field = { ...block.field, ...updates };
@@ -1491,13 +1420,21 @@ const FormsBuilder = ({ template, onBack, onSaved }) => {
         });
       }
 
+      // await createFormTemplateVersion({
+      //   template: templateId,
+      //   schema: schema,
+      //   title: `${formName} v1`,
+      //   is_published: true,
+      //   is_default_for_new_responses: true,
+      // });
       await createFormTemplateVersion({
-        template: templateId,
-        schema: schema,
-        title: `${formName} v1`,
-        is_published: true,
-        is_default_for_new_responses: true,
-      });
+  template: templateId,
+  schema: normalizeSignatureToFile(schema),   // ✅ here
+  title: `${formName} v1`,
+  is_published: true,
+  is_default_for_new_responses: true,
+});
+
 
       alert("Form template saved successfully");
       onSaved();
@@ -1634,11 +1571,22 @@ const FormsBuilder = ({ template, onBack, onSaved }) => {
                     colWidths.length ||
                     (sec.rows[0]?.columns?.length || 1);
 
-                  const gridTemplateColumns = colWidths.length
-                    ? colWidths
-                        .map((w) => `${(w / totalUnits) * 100}%`)
-                        .join(" ")
-                    : `repeat(${nCols}, 1fr)`;
+                    const { keep, map, keptCount } = buildExcelColMap(sec);
+
+const rawWidths = meta.col_widths || [];
+const keptWidths = rawWidths.length ? rawWidths.filter((_, i) => keep[i]) : [];
+const totalUnitsKept = keptWidths.reduce((a, b) => a + b, 0) || 1;
+
+const gridTemplateColumns = keptWidths.length
+  ? keptWidths.map((w) => `${(w / totalUnitsKept) * 100}%`).join(" ")
+  : `repeat(${keptCount || 1}, 1fr)`;
+
+
+                  // const gridTemplateColumns = colWidths.length
+                  //   ? colWidths
+                  //       .map((w) => `${(w / totalUnits) * 100}%`)
+                  //       .join(" ")
+                  //   : `repeat(${nCols}, 1fr)`;
 
                   const rowHeights = sec.rows.map(
                     (row) => row.height || 20
@@ -1672,7 +1620,7 @@ const FormsBuilder = ({ template, onBack, onSaved }) => {
                             }
 
                             const rowSpan = merge.row_span || 1;
-                            const colSpan = merge.col_span || 1;
+                            // const colSpan = merge.col_span || 1;
 
                             const hasBlock =
                               col.blocks && col.blocks.length > 0;
@@ -1687,9 +1635,17 @@ const FormsBuilder = ({ template, onBack, onSaved }) => {
                               selectedPos.colIndex === cIdx;
 
                             // Excel col/row → CSS grid line
-                            const excelCol = col.excel_col || cIdx + minCol;
-                            const startCol = excelCol - minCol + 1;
-                            const startRow = rIdx + 1;
+                            // const excelCol = col.excel_col || cIdx + minCol;
+                            // const startCol = excelCol - minCol + 1;
+                            // const startRow = rIdx + 1;
+                            const startCol = map[cIdx] + 1;
+if (startCol <= 0) return null;
+const startRow = rIdx + 1;
+
+
+const rawSpan = merge.col_span || 1;
+const colSpan = spanOnKept(keep, cIdx, rawSpan);
+
 
                             const positioning = {
                               gridColumnStart: startCol,
@@ -1707,7 +1663,7 @@ const FormsBuilder = ({ template, onBack, onSaved }) => {
                                 <div
                                   key={`${rIdx}-${cIdx}`}
                                   style={{
-                                    ...styles.emptyCell(isSelected),
+                                    ...styles.excelCell(isSelected),
                                     ...positioning,
                                   }}
                                   onClick={handleClick}
@@ -1719,24 +1675,27 @@ const FormsBuilder = ({ template, onBack, onSaved }) => {
 
                             // ==== FIELD block ====
                             if (block.block_type === "FIELD") {
+                                const hideLbl = !!block?.field?.config?.hideLabel; // ✅ yahin define
+
                               return (
                                 <div
                                   key={`${rIdx}-${cIdx}`}
                                   style={{
-                                    ...styles.fieldBlock(isSelected),
+                                    ...styles.excelCell(isSelected),
                                     ...positioning,
                                   }}
                                   onClick={handleClick}
                                 >
-                                  <div style={styles.fieldLabel}>
-                                    {block.field.label}
-                                    {block.field.required && (
-                                      <span style={styles.requiredStar}>
-                                        *
-                                      </span>
-                                    )}
-                                  </div>
-                                  {renderFieldControl(block.field)}
+
+{!hideLbl && (
+  <div style={styles.fieldLabel}>
+    {block.field.label}
+    {block.field.required && <span style={styles.requiredStar}>*</span>}
+  </div>
+)}
+
+{renderFieldControl(block.field, { compact: true })}
+
                                 </div>
                               );
                             }
@@ -1747,7 +1706,7 @@ const FormsBuilder = ({ template, onBack, onSaved }) => {
                                 <div
                                   key={`${rIdx}-${cIdx}`}
                                   style={{
-                                    ...styles.staticBlock(isSelected),
+                                    ...styles.excelHeaderCell(isSelected),
                                     ...positioning,
                                   }}
                                   onClick={handleClick}

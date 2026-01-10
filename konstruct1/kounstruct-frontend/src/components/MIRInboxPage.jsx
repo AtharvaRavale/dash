@@ -130,7 +130,7 @@ const getDecisionDisplay = (row) => {
       setRows(list);
     } catch (err) {
       console.error("Failed to load inbox", err);
-      toast.error(`${docType} inbox load nahi ho paayi.`);
+      toast.error(`${docType} inbox load error`);
     } finally {
       setLoading(false);
     }
@@ -164,14 +164,14 @@ const getDecisionDisplay = (row) => {
     try {
       const acceptFn = getAcceptApi();
       await acceptFn(row.id, { comment: `Accepted via ${docType} inbox.` });
-      toast.success(`${docType} accept ho gaya.`);
+      toast.success(`${docType} acceped`);
       await fetchList();
     } catch (err) {
       console.error("Accept error", err);
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "Accept karte time error aaya.";
+        "Accept error";
       toast.error(msg);
     } finally {
       setActionLoadingId(null);
@@ -187,14 +187,14 @@ const getDecisionDisplay = (row) => {
     try {
       const rejectFn = getRejectApi();
       await rejectFn(row.id, { comment: reason || `Rejected via ${docType} inbox.` });
-      toast.success(`${docType} reject ho gaya.`);
+      toast.success(`${docType} rejected`);
       await fetchList();
     } catch (err) {
       console.error("Reject error", err);
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.error ||
-        "Reject karte time error aaya.";
+        "Reject error";
       toast.error(msg);
     } finally {
       setActionLoadingId(null);
