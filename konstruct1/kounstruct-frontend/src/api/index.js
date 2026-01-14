@@ -6,6 +6,8 @@ import {
   NEWchecklistInstance,
 } from "./axiosInstance";
 import { organnizationInstance } from "./axiosInstance"
+import axios from "axios";
+
 
 const __isLoggingOut = () => localStorage.getItem("__LOGGING_OUT__") === "1";
 const __hasAccess = () => !!localStorage.getItem("ACCESS_TOKEN");
@@ -1096,11 +1098,11 @@ export const createProjectSchedules = async (payload) =>
     headers: { "Content-Type": "application/json" },
   });
 
-export const listProjectSchedules = async (projectId) =>
-  projectInstance.get(`/v2/scheduling/list/`, {
-    params: { project_id: projectId },
-    headers: { "Content-Type": "application/json" },
-  });
+// export const listProjectSchedules = async (projectId) =>
+//   projectInstance.get(`/v2/scheduling/list/`, {
+//     params: { project_id: projectId },
+//     headers: { "Content-Type": "application/json" },
+//   });
 
 // export const myProjectSchedules = async (projectId) =>
 //   projectInstance.get(`/v2/scheduling/my/`, {
@@ -1109,10 +1111,10 @@ export const listProjectSchedules = async (projectId) =>
 //   });
 
   // api.js
-export const myProjectSchedules = (project_id, extraParams = {}) =>
-  projectInstance.get("/v2/scheduling/my/", {
-    params: { project_id, ...extraParams },
-  });
+// export const myProjectSchedules = (project_id, extraParams = {}) =>
+//   projectInstance.get("/v2/scheduling/my/", {
+//     params: { project_id, ...extraParams },
+//   });
 
 
 
@@ -2561,3 +2563,46 @@ export const exportFormResponsePdf = async (responseId, { mode = "grid" } = {}) 
 // };
 
 
+
+const API_BASE = "https://konstruct.world/checklists";
+
+
+const authHeaders = () => ({
+  Authorization: `Bearer ${
+    localStorage.getItem("ACCESS_TOKEN") ||
+    localStorage.getItem("TOKEN") ||
+    localStorage.getItem("token") ||
+    ""
+  }`,
+});
+
+
+// ✅ SCHEDULING (Checklist service)
+// POST https://konstruct.world/checklists/api/scheduling/schedules/create/
+export const createChecklistSchedule = (payload) =>
+  NEWchecklistInstance.post("/scheduling/schedules/create/", payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+
+  export const myProjectSchedules = (projectId) => {
+  return axios.get(`${API_BASE}/scheduling/my/`, {
+    params: { project_id: projectId },
+    headers: authHeaders(),
+  });
+};
+
+// (optional) NEW List API: /api/scheduling/list/?project_id=118
+export const listProjectSchedules = (projectId) => {
+  return axios.get(`${API_BASE}/scheduling/list/`, {
+    params: { project_id: projectId },
+    headers: authHeaders(),
+  });
+};
+
+
+// export const getSchedulingSetup = (projectId, params = {}) => {
+//   return NEWchecklistInstance.get("/scheduling/setup/", {
+//     params: { project_id: projectId, ...params },
+//   });
+// };

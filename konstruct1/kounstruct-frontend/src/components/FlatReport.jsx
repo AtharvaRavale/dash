@@ -1788,7 +1788,7 @@ export default function FlatReport() {
                 }}
               >
                 <div className="text-[11px] font-semibold mb-1 uppercase tracking-wide text-emerald-50">
-                  Closed
+                  Pending
                 </div>
                 <div className="text-3xl font-black text-emerald-50">
                   {fmtInt(totalClosed)}

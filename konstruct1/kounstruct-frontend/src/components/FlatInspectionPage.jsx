@@ -346,6 +346,33 @@ const ReportFilterModal = ({ onClose, onApply, themeConfig }) => {
 export const FLAT_REPORT_API = "/flat-report/";
 
 
+const ACTIVE_ROLE_LS_KEY = "ACTIVE_ROLE";              // config page me bhi same key use karo
+const ACTIVE_ROLE_EVENT = "active-role-changed";       // custom event name
+
+const normalizeRole = (r) => {
+  const x = String(r || "").trim().toUpperCase();
+  // handle your backend typo too
+  if (x === "INTIALIZER") return "INITIALIZER";
+  return x;
+};
+
+const readActiveRoleFromStorage = () => {
+  // 1) direct key
+  const direct = localStorage.getItem(ACTIVE_ROLE_LS_KEY);
+  if (direct) return normalizeRole(direct);
+
+  // 2) fallback from persist:root (redux-persist)
+  try {
+    const root = JSON.parse(localStorage.getItem("persist:root") || "{}");
+    const userObj = root.user ? JSON.parse(root.user) : null;
+    const roles = userObj?.user?.roles;
+    if (Array.isArray(roles) && roles.length) return normalizeRole(roles[0]);
+  } catch (e) {}
+
+  return null;
+};
+
+
 
 const FlatInspectionPage = () => {
     const { theme } = useTheme();
@@ -365,7 +392,9 @@ const FlatInspectionPage = () => {
     const [showRoomsModal, setShowRoomsModal] = useState(false);
     const [selectedRoom, setSelectedRoom] = useState(null);
     const [expandedItems, setExpandedItems] = useState({});
-    const [userRole, setUserRole] = useState(null);
+    // const [userRole, setUserRole] = useState(null);
+    const [userRole, setUserRole] = useState(() => readActiveRoleFromStorage() || "CHECKER");
+
     const [paginationInfo, setPaginationInfo] = useState({
         count: 0,
         next: null,
@@ -475,6 +504,17 @@ const [reportFilter, setReportFilter] = useState({
   includeChecker: true,
   includeSupervisor: true,
 });
+
+const readActiveRole = () => {
+  const r =
+    localStorage.getItem("ACTIVE_ROLE") ||
+    localStorage.getItem("FLOW_ROLE") ||
+    localStorage.getItem("ROLE") ||
+    "";
+  return String(r || "").toUpperCase();
+};
+
+const [activeRole, setActiveRole] = useState(readActiveRole());
 
 
     const [activeTab, setActiveTab] = useState('ready-to-start');
@@ -1016,6 +1056,55 @@ useEffect(() => {
 }, [flatId]);
 
 console.log("Flat ID for report fetch:", flatId);
+useEffect(() => {
+  const syncRole = () => {
+    const nextRole = readActiveRoleFromStorage();
+    if (nextRole && nextRole !== userRole) {
+      console.log("🔁 Role changed:", userRole, "→", nextRole);
+      setUserRole(nextRole);
+    }
+  };
+
+  // ✅ same-tab role change (custom event)
+  const onRoleChanged = () => syncRole();
+  window.addEventListener(ACTIVE_ROLE_EVENT, onRoleChanged);
+
+  // ✅ cross-tab role change (storage event)
+  const onStorage = (e) => {
+    if (e.key === ACTIVE_ROLE_LS_KEY || e.key === "persist:root") syncRole();
+  };
+  window.addEventListener("storage", onStorage);
+
+  // ✅ fallback: because sometimes event miss ho jata
+  const id = setInterval(syncRole, 800);
+
+  return () => {
+    window.removeEventListener(ACTIVE_ROLE_EVENT, onRoleChanged);
+    window.removeEventListener("storage", onStorage);
+    clearInterval(id);
+  };
+}, [userRole]);
+
+
+useEffect(() => {
+  const sync = () => setActiveRole(readActiveRole());
+
+  const onCustom = (e) => {
+    const roleFromEvent = e?.detail?.role;
+    setActiveRole(String(roleFromEvent || readActiveRole()).toUpperCase());
+  };
+
+  // other tab updates
+  window.addEventListener("storage", sync);
+
+  // ✅ same tab updates (Profile page se dispatch ho raha hai)
+  window.addEventListener("ACTIVE_ROLE_CHANGED", onCustom);
+
+  return () => {
+    window.removeEventListener("storage", sync);
+    window.removeEventListener("ACTIVE_ROLE_CHANGED", onCustom);
+  };
+}, []);
 
 
     useEffect(() => {

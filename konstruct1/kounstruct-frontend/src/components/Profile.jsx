@@ -136,13 +136,37 @@ function Profile({ onClose }) {
   };
     // Flow roles (Maker / Checker / Supervisor) coming from UserAccess API
   const [flowRoles, setFlowRoles] = useState([]);
-  const [flowRole, setFlowRole] = useState(
-    localStorage.getItem("FLOW_ROLE") || ""
-  );
+  // const [flowRole, setFlowRole] = useState(
+  //   localStorage.getItem("FLOW_ROLE") || ""
+  // );
+  const [flowRole, setFlowRole] = useState(() => {
+  const v =
+    localStorage.getItem("FLOW_ROLE") ||
+    localStorage.getItem("ACTIVE_ROLE") ||
+    "";
+  return String(v || "").toUpperCase();
+});
+
   const [flowRoleLoading, setFlowRoleLoading] = useState(false);
   const [flowRoleError, setFlowRoleError] = useState("");
 // project_id -> { ROLE_CODE -> { role, stages: [...], hasGlobalAllChecklist } }
 const [flowRoleStagesByProject, setFlowRoleStagesByProject] = useState({});
+
+
+
+const persistAndBroadcastRole = (role) => {
+  const r = String(role || "").toUpperCase();
+  if (!r) return;
+
+  // ✅ single source of truth keys (FlatInspection later ACTIVE_ROLE read karega)
+  localStorage.setItem("FLOW_ROLE", r);
+  localStorage.setItem("ACTIVE_ROLE", r);
+
+  // ✅ same tab notification (storage event same tab me fire nahi hota)
+  window.dispatchEvent(
+    new CustomEvent("ACTIVE_ROLE_CHANGED", { detail: { role: r } })
+  );
+};
 
 
 
@@ -660,14 +684,27 @@ useEffect(() => {
       }));
 
       // 5) FLOW_ROLE ko sync rakho
-      const stored = localStorage.getItem("FLOW_ROLE");
-      if (stored && rolesArr.includes(stored)) {
-        setFlowRole(stored);
-      } else if (!flowRole && rolesArr.length) {
-        const first = rolesArr[0];
-        setFlowRole(first);
-        localStorage.setItem("FLOW_ROLE", first);
-      }
+      // const stored = localStorage.getItem("FLOW_ROLE");
+      // if (stored && rolesArr.includes(stored)) {
+      //   setFlowRole(stored);
+      // } else if (!flowRole && rolesArr.length) {
+      //   const first = rolesArr[0];
+      //   setFlowRole(first);
+      //   localStorage.setItem("FLOW_ROLE", first);
+      // }
+      const storedRaw =
+  localStorage.getItem("FLOW_ROLE") || localStorage.getItem("ACTIVE_ROLE");
+const stored = String(storedRaw || "").toUpperCase();
+
+if (stored && rolesArr.includes(stored)) {
+  setFlowRole(stored);
+  persistAndBroadcastRole(stored);
+} else if (!flowRole && rolesArr.length) {
+  const first = String(rolesArr[0] || "").toUpperCase();
+  setFlowRole(first);
+  persistAndBroadcastRole(first);
+}
+
     } catch (e) {
       console.error("Failed to load flow roles + stages", e);
       setFlowRoleError("Could not load roles for this project.");
@@ -679,11 +716,17 @@ useEffect(() => {
   loadRolesAndStages();
 }, [userData, activeProjectId]);   // ✅ same dependencies
 
-  useEffect(() => {
-    if (flowRole) {
-      localStorage.setItem("FLOW_ROLE", flowRole);
-    }
-  }, [flowRole]);
+useEffect(() => {
+  if (!flowRole) return;
+  persistAndBroadcastRole(flowRole);
+}, [flowRole]);
+
+
+  // useEffect(() => {
+  //   if (flowRole) {
+  //     localStorage.setItem("FLOW_ROLE", flowRole);
+  //   }
+  // }, [flowRole]);
 
   useEffect(() => {
     if (hydrated && !userData) {
@@ -728,6 +771,7 @@ useEffect(() => {
     "FLOW_ROLE" ,
     "PROJECT_ID",
     "ACTIVE_PROJECT_ID",   // <- redux-persist cache
+    "ACTIVE_ROLE",
   ];
   keys.forEach(k => localStorage.removeItem(k));
 

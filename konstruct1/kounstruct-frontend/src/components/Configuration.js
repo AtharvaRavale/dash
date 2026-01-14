@@ -1727,6 +1727,20 @@ const labelFromMapping = (s, m, t) => {
   if (pieces.length) return pieces.join(" > ");
   return stage || `Schedule #${s?.id}`;
 };
+// ✅ NEW: extract checklist names from schedule payload
+const getChecklistInfo = (s) => {
+  const arr = Array.isArray(s?.checklists) ? s.checklists : [];
+  const names = arr
+    .map((c) => c?.name || (c?.id ? `Checklist #${c.id}` : null))
+    .filter(Boolean);
+
+  return {
+    list: arr,          // [{id,name}]
+    names,              // ["Safety", "Electrical", ...]
+    count: names.length // number
+  };
+};
+
 
 // Normalize server payload into display rows
 const normalizedRows = React.useMemo(() => {
@@ -1736,41 +1750,96 @@ const normalizedRows = React.useMemo(() => {
 
   const out = [];
   (src || []).forEach((s) => {
-    const start = s.start_date || s.start;
-    const end = s.end_date || s.end;
+  const start = s.start_date || s.start;
+  const end = s.end_date || s.end;
 
-    const mappings = Array.isArray(s?.mappings) ? s.mappings : [];
-    if (!mappings.length) {
+  // ✅ NEW: checklists info from backend
+  const ck = getChecklistInfo(s);
+
+  const mappings = Array.isArray(s?.mappings) ? s.mappings : [];
+  if (!mappings.length) {
+    out.push({
+      id: s.id,
+      label: s?.stage?.name || s?.stage_name || `Schedule #${s?.id}`,
+      start,
+      end,
+
+      // ✅ NEW fields
+      checklists: ck.list,
+      checklistNames: ck.names,
+      checklistCount: ck.count,
+    });
+    return;
+  }
+
+  mappings.forEach((m, i) => {
+    const targets = Array.isArray(m?.targets) ? m.targets : [];
+    if (!targets.length) {
       out.push({
-        id: s.id,
-        label: s?.stage?.name || s?.stage_name || `Schedule #${s?.id}`,
+        id: `${s.id}-${i}`,
+        label: labelFromMapping(s, m, null),
         start,
         end,
-      });
-      return;
-    }
 
-    mappings.forEach((m, i) => {
-      const targets = Array.isArray(m?.targets) ? m.targets : [];
-      if (!targets.length) {
+        // ✅ NEW fields
+        checklists: ck.list,
+        checklistNames: ck.names,
+        checklistCount: ck.count,
+      });
+    } else {
+      targets.forEach((t, ti) => {
         out.push({
-          id: `${s.id}-${i}`,
-          label: labelFromMapping(s, m, null),
+          id: `${s.id}-${i}-${ti}`,
+          label: labelFromMapping(s, m, t),
           start,
           end,
+
+          // ✅ NEW fields
+          checklists: ck.list,
+          checklistNames: ck.names,
+          checklistCount: ck.count,
         });
-      } else {
-        targets.forEach((t, ti) => {
-          out.push({
-            id: `${s.id}-${i}-${ti}`,
-            label: labelFromMapping(s, m, t),
-            start,
-            end,
-          });
-        });
-      }
-    });
+      });
+    }
   });
+});
+
+  // (src || []).forEach((s) => {
+  //   const start = s.start_date || s.start;
+  //   const end = s.end_date || s.end;
+
+  //   const mappings = Array.isArray(s?.mappings) ? s.mappings : [];
+  //   if (!mappings.length) {
+  //     out.push({
+  //       id: s.id,
+  //       label: s?.stage?.name || s?.stage_name || `Schedule #${s?.id}`,
+  //       start,
+  //       end,
+  //     });
+  //     return;
+  //   }
+
+  //   mappings.forEach((m, i) => {
+  //     const targets = Array.isArray(m?.targets) ? m.targets : [];
+  //     if (!targets.length) {
+  //       out.push({
+  //         id: `${s.id}-${i}`,
+  //         label: labelFromMapping(s, m, null),
+  //         start,
+  //         end,
+  //       });
+  //     } else {
+  //       targets.forEach((t, ti) => {
+  //         out.push({
+  //           id: `${s.id}-${i}-${ti}`,
+  //           label: labelFromMapping(s, m, t),
+  //           start,
+  //           end,
+  //         });
+  //       });
+  //     }
+  //   });
+  // });
 
   return out;
 }, [mySchedRaw]);
@@ -1917,12 +1986,51 @@ const ScheduleCard = ({ row, cardColor, textColor, borderColor }) => {
           <div className="text-[15px] md:text-[16px] font-semibold leading-5" style={{ color: textColor }}>
             {row.label}
           </div>
-          <div className="text-xs md:text-sm opacity-70">
-            End: {fmtDate(row.end)} • Start: {fmtDate(row.start)}
-          </div>
-          <div className="mt-1">
-            <StatusChip end={row.end} />
-          </div>
+          <div className="text-[15px] md:text-[16px] font-semibold leading-5" style={{ color: textColor }}>
+  {row.label}
+</div>
+
+{/* ✅ NEW: checklist chips */}
+{Array.isArray(row.checklistNames) && row.checklistNames.length > 0 && (
+  <div className="flex flex-wrap gap-1 mt-1">
+    {row.checklistNames.slice(0, 3).map((n, idx) => (
+      <span
+        key={idx}
+        className="px-2 py-0.5 rounded-full text-[11px] font-semibold border"
+        style={{
+          background: "rgba(124,58,237,.10)",
+          borderColor: "rgba(124,58,237,.25)",
+          color: textColor,
+        }}
+        title={n}
+      >
+        {n}
+      </span>
+    ))}
+    {row.checklistNames.length > 3 && (
+      <span
+        className="px-2 py-0.5 rounded-full text-[11px] font-semibold border opacity-80"
+        style={{
+          background: "rgba(0,0,0,.04)",
+          borderColor: "rgba(0,0,0,.10)",
+          color: textColor,
+        }}
+        title={row.checklistNames.join(", ")}
+      >
+        +{row.checklistNames.length - 3} more
+      </span>
+    )}
+  </div>
+)}
+
+<div className="text-xs md:text-sm opacity-70 mt-1">
+  End: {fmtDate(row.end)} • Start: {fmtDate(row.start)}
+</div>
+
+<div className="mt-1">
+  <StatusChip end={row.end} />
+</div>
+
         </div>
       </div>
 
