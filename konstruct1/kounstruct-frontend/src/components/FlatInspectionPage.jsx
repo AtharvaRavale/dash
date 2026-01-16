@@ -379,6 +379,9 @@ const FlatInspectionPage = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { flatId } = useParams();
+    // ✅ backend expects "intializer" (typo) as role_id
+
+
 
 
     const { projectId, flatNumber, flatType } = location.state || {};
@@ -543,6 +546,16 @@ const mergeFiles = (prev = [], next = []) => {
   }
   return [...prev, ...toAdd];
 };
+const ROLE_ID_MAP = {
+  INITIALIZER: "intializer",
+  INTIALIZER: "intializer", // safeguard (typo role)
+  MAKER: "maker",
+  CHECKER: "checker",
+  SUPERVISOR: "supervisor",
+};
+
+// always compute role_id from current active role
+const roleId = ROLE_ID_MAP[String(userRole || "").toUpperCase()] || null;
 
 
     // Universal tab state for working roles (CHECKER, MAKER, SUPERVISOR)
@@ -4549,12 +4562,16 @@ const loadInitializerPage = async ({
   try {
     const token = localStorage.getItem("ACCESS_TOKEN");
     const params = {
-      project_id: projectId,
-      flat_id: flatId,
-      status: statusByTab[tabKey], // 👈 important for INITIALIZER
-      limit,
-      offset,
-    };
+  project_id: projectId,
+  flat_id: flatId,
+  status: statusByTab[tabKey],
+  limit,
+  offset,
+  ...(roleId ? { role_id: roleId } : {}),  // ✅ ADD THIS
+};
+
+console.log("⬆️ loadInitializerPage params:", params);
+
 
     console.log("⬆️ loadInitializerPage params:", params);
 
@@ -4595,8 +4612,7 @@ const loadWorkPage = async ({ offset = 0, limit } = {}) => {
     flat_id: flatId,
     limit: limit || pageState.limit || 10,
     offset,
-    role_id: apiRole,        // ✅ dynamic role
-  };
+...(roleId ? { role_id: roleId } : {}),  };
 
   console.log("🔭 loadWorkPage → params:", params);
 
@@ -4646,10 +4662,18 @@ useEffect(() => {
 
 const fetchByUrl = async (url) => {
   if (!url) return;
+  let finalUrl = url;
+  try {
+    const u = new URL(url, window.location.origin);
+    if (roleId && !u.searchParams.has("role_id")) {
+      u.searchParams.set("role_id", roleId);
+    }
+    finalUrl = u.toString();
+  } catch {}
   setPageLoading(true);
   try {
     const token = localStorage.getItem("ACCESS_TOKEN");
-    const res = await checklistInstance.get(url, {
+    const res = await checklistInstance.get(finalUrl, {
       timeout: 40000,
       
       headers: { Authorization: `Bearer ${token}` } });
@@ -4836,6 +4860,8 @@ const loadFirstPage = async () => {
       status: "not_started",
       limit: "10",
       offset: "0",
+        ...(roleId ? { role_id: roleId } : {}),  // ✅ ADD THIS
+
     }).toString();
 
     //const url = `https://konstruct.world/checklists/sexy-getchchklist/?${params}`;
@@ -7631,4 +7657,3 @@ const WrappedFlatInspectionPage = () => {
 
 
 export default WrappedFlatInspectionPage;
-

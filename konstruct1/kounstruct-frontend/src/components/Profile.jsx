@@ -163,6 +163,7 @@ const persistAndBroadcastRole = (role) => {
   localStorage.setItem("ACTIVE_ROLE", r);
 
   // ✅ same tab notification (storage event same tab me fire nahi hota)
+  
   window.dispatchEvent(
     new CustomEvent("ACTIVE_ROLE_CHANGED", { detail: { role: r } })
   );
