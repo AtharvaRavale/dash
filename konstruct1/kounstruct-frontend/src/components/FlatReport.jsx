@@ -1320,6 +1320,10 @@ export default function FlatReport() {
   // ✅ maps
   const [categoryNameById, setCategoryNameById] = useState({});
   const [roomNameById, setRoomNameById] = useState({});
+    // ✅ resolve flat number from flatId
+  const [resolvedFlatMeta, setResolvedFlatMeta] = useState(null);
+  const [resolvedFlatStatus, setResolvedFlatStatus] = useState("idle"); // idle | loading | ok | failed
+
 
   // ✅ meta statuses
   const [catMetaLoading, setCatMetaLoading] = useState(false);
@@ -1411,6 +1415,60 @@ export default function FlatReport() {
   const cardBg =
     theme === "dark" ? "rgba(15,23,42,0.95)" : "rgba(255,255,255,0.98)";
   const borderColor = theme === "dark" ? "#475569" : "#cbd5e1";
+
+
+    // ✅ Fetch flat number using flatId (if not already present in state)
+  useEffect(() => {
+    const fetchFlatNumber = async () => {
+      // if state already has number, no need
+      if (flatMeta?.number) return;
+
+      // buildingId/towerId is needed for this API
+      const buildingId =
+        filtersFromOverview?.buildingId ||
+        location.state?.buildingId ||
+        location.state?.towerId ||
+        null;
+
+      if (!buildingId || !flatId) return;
+
+      setResolvedFlatStatus("loading");
+      try {
+        const res = await axios.get(
+          `${API_BASE}/projects/levels-with-flats/${buildingId}/`,
+          { headers: authHeaders() }
+        );
+
+        const levels = normalizeList(res); // API returns array, this handles it
+
+        let found = null;
+
+        for (const lvl of levels) {
+          const flats = Array.isArray(lvl?.flats) ? lvl.flats : [];
+          const match = flats.find((f) => normId(f?.id) === normId(flatId));
+
+          if (match) {
+            found = {
+              number: toStr(match?.number).trim() || null,
+              typeName: toStr(match?.flattype?.type_name).trim() || null,
+              levelName: toStr(lvl?.name).trim() || null,
+            };
+            break;
+          }
+        }
+
+        setResolvedFlatMeta(found);
+        setResolvedFlatStatus(found ? "ok" : "failed");
+      } catch (e) {
+        console.error("❌ levels-with-flats fetch failed:", e);
+        setResolvedFlatMeta(null);
+        setResolvedFlatStatus("failed");
+      }
+    };
+
+    fetchFlatNumber();
+  }, [flatId, flatMeta?.number, filtersFromOverview?.buildingId, location.state]);
+
 
   /* ---------------- prefetched stats ---------------- */
   useEffect(() => {
@@ -1562,11 +1620,18 @@ export default function FlatReport() {
     [rooms]
   );
 
-  const flatLabel = flatMeta
-    ? `Flat ${flatMeta.number || flatId}${flatMeta.typeName ? ` • ${flatMeta.typeName}` : ""}`
-    : `Flat #${flatId}`;
+  // const flatLabel = flatMeta
+  //   ? `Flat ${flatMeta.number || flatId}${flatMeta.typeName ? ` • ${flatMeta.typeName}` : ""}`
+  //   : `Flat #${flatId}`;
 
-  const levelLabel = flatMeta?.levelName || "";
+  // const levelLabel = flatMeta?.levelName || "";
+    const flatNumber = flatMeta?.number || resolvedFlatMeta?.number || null;
+  const flatTypeName = flatMeta?.typeName || resolvedFlatMeta?.typeName || null;
+
+  const flatLabel = `Flat ${flatNumber || flatId}${flatTypeName ? ` • ${flatTypeName}` : ""}`;
+
+  const levelLabel = flatMeta?.levelName || resolvedFlatMeta?.levelName || "";
+
   const projectName =
     projectFromState?.name ||
     projectFromState?.project_name ||

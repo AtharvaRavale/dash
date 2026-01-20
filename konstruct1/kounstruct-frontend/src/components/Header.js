@@ -360,6 +360,13 @@ function Header() {
     hasRole("Project Head") ||
     hasRole("Head");
   const isSuperAdmin = hasRole("super admin");
+    const isManager = hasRole("manager");
+  const isAdmin = hasRole("admin");
+  // const isSuperAdmin = hasRole("super admin"); // (ye already hai)
+
+  // ✅ Only Users (not admin/manager/superadmin)
+  const showSafetyForUserOnly = !isManager && !isAdmin && !isSuperAdmin;
+
 
   // ---- theme colors
   const bgColor = theme === "dark" ? "#191922" : BG_OFFWHITE;
@@ -532,6 +539,17 @@ function Header() {
               title="My Forms Inbox"
             >
                Forms Inbox
+            </NavLink>
+          )}
+          {/* 🔹 Safety (ONLY USERS) */}
+          {showSafetyForUserOnly && (
+            <NavLink
+              to="/safety/my-sessions"
+              className="font-medium flex items-center gap-1"
+              style={{ color: textColor, textDecoration: "none" }}
+              title="Safety"
+            >
+              Safety
             </NavLink>
           )}
 

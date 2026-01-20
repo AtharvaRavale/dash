@@ -191,6 +191,12 @@ import MyFormResponseDetailPage from "./components/MyFormResponseDetailPage";
 import WIRCreatePage from "./components/WIRCreatePage";
 import WIRDetailPage from "./components/WIRDetailPage";
 // import OverviewPage from "../pages/components/OverviewPage";
+import SafetySessionsManagerList from "./components/SafetySessionsManagerList";
+import SafetySessionCreatePage from "./components/SafetySessionCreatePage";
+import SafetyMySessionsList from "./components/SafetyMySessionsList";
+import SafetyMySessionDetail from "./components/SafetyMySessionDetail";
+import SafetySessionManagerView from "./components/SafetySessionManagerView";
+import ProjectFormsManagerSetupPage from "./components/ProjectFormsManagerSetupPage";
 
 
 
@@ -276,6 +282,8 @@ function AppRoutes() {
           element={<UserManagementSetup />}
         />
         <Route path="/projects/:id/flat-report/:flatId" element={<FlatReport />} />
+        <Route path="/project-forms/setup" element={<ProjectFormsManagerSetupPage/>} />
+
 
         <Route path="/project/:id" element={<ProjectDetails />} />
         <Route path="/snagging/:id" element={<Snagging />} />
@@ -294,6 +302,10 @@ function AppRoutes() {
           path="/PendingSupervisorItems"
           element={<PendingSupervisorItems />}
         />
+        <Route path="/safety/sessions" element={<SafetySessionsManagerList />} />
+        <Route path="/safety/sessions/create" element={<SafetySessionCreatePage />} />
+
+
         {/* <Route path="/overview/project/:projectId" element={<ProjectOverviewPage />} /> */}
 
           <Route path="/forms" element={<FormsEnginePage />} />
@@ -309,6 +321,11 @@ function AppRoutes() {
         <Route path="/wir/inbox" element={<Navigate to="/mir/inbox" replace />} />
 
         <Route path="/wir/:id" element={<WIRDetailPage />} />
+       <Route path="/safety/my-sessions" element={<SafetyMySessionsList />} />
+<Route path="/safety/my-sessions/:id" element={<SafetyMySessionDetail />} />
+<Route path="/safety/sessions/:id" element={<SafetySessionManagerView />} />
+
+
 
         
 

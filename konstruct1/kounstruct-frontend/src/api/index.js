@@ -76,6 +76,54 @@ const __getBlobWithFallback = async (instance, urlList, config = {}) => {
   throw lastErr;
 };
 
+// ===== FORMS: JSON request fallback helper (handles /users/forms OR /forms OR /api/forms) =====
+const __formsUrlCandidates = (path) => {
+  const root = __getApiRoot(); // e.g. https://konstruct.world
+  const p = String(path || "");
+  const p2 = p.startsWith("/") ? p : `/${p}`;
+
+  // candidates (order matters)
+  return [
+    `${root}/users/forms${p2}`,
+    `${root}/forms${p2}`,
+    `${root}/api/forms${p2}`,
+    `/users/forms${p2}`,
+    `/forms${p2}`,
+    `/api/forms${p2}`,
+  ];
+};
+
+const __jsonWithFallback = async (
+  instance,
+  { method = "get", urlList = [], params, data, config = {} }
+) => {
+  let lastErr = null;
+
+  for (const url of urlList) {
+    try {
+      return await instance.request({
+        url,
+        method,
+        params,
+        data,
+        ...config,
+        headers: {
+          ...(config.headers || {}),
+          Accept: "application/json",
+        },
+      });
+    } catch (err) {
+      lastErr = err;
+      const status = err?.response?.status;
+
+      // fallback only on 404
+      if (status && status !== 404) throw err;
+      if (!err?.response) throw err;
+    }
+  }
+
+  throw lastErr;
+};
 
 // export function downloadBlob(blob, filename = "file.pdf") {
 //   const url = window.URL.createObjectURL(blob);
@@ -1072,73 +1120,11 @@ export const updateChecklistById = async (checklistId, payload) =>
   });
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-  // ==== SCHEDULING APIs ====
-
-// export const getSchedulingSetup = async (projectId) =>
-//   projectInstance.get(`/v2/scheduling/setup/`, {
-//     params: { project_id: projectId },
-//     headers: { "Content-Type": "application/json" },
-//   });
-
 export const createProjectSchedules = async (payload) =>
   projectInstance.post(`/v2/scheduling/`, payload, {
     headers: { "Content-Type": "application/json" },
   });
 
-// export const listProjectSchedules = async (projectId) =>
-//   projectInstance.get(`/v2/scheduling/list/`, {
-//     params: { project_id: projectId },
-//     headers: { "Content-Type": "application/json" },
-//   });
-
-// export const myProjectSchedules = async (projectId) =>
-//   projectInstance.get(`/v2/scheduling/my/`, {
-//     params: { project_id: projectId },
-//     headers: { "Content-Type": "application/json" },
-//   });
-
-  // api.js
-// export const myProjectSchedules = (project_id, extraParams = {}) =>
-//   projectInstance.get("/v2/scheduling/my/", {
-//     params: { project_id, ...extraParams },
-//   });
-
-
-
-  // api.js
-// export const getProjectsForCurrentUser = async () => {
-//   const roleRaw = localStorage.getItem("ROLE") || "";
-//   const role = roleRaw.toLowerCase();
-//   const userStr = localStorage.getItem("USER_DATA");
-//   const user = userStr && userStr !== "undefined" ? JSON.parse(userStr) : null;
-
-//   if (!user) return { data: [] };
-//   if (!__hasAccess() || __isLoggingOut()) return { data: [] };
-
-
-//   if (role === "super admin") return Allprojects(); // /projects/
-//   if (role === "admin" || role === "manager") return getProjectUserDetails(); // /user-stage-role/get-projects-by-user/
-
-//   // fallback: ownership-based for other roles
-//   const entity_id = user.entity_id || null;
-//   const company_id = user.company_id || null;
-//   const organization_id = user.org || user.organization_id || null;
-//   if (!entity_id && !company_id && !organization_id) return { data: [] };
-//   return getProjectsByOwnership({ entity_id, company_id, organization_id }); // /projects/by_ownership/?...
-// };
 
 export const getProjectsForCurrentUser = async () => {
   const roleRaw = localStorage.getItem("ROLE") || "";
@@ -1178,105 +1164,10 @@ export const getProjectsByOrgOwnership = async (organizationId) =>
 
 
 
-  // api.js
-// import axios from "axios";
-
-// const projectInstance = axios.create({
-//   baseURL: import.meta.env.VITE_API_BASE_URL || "https://konstruct.world",
-//   withCredentials: true,
-// });
-
-// (optional) auth header
-// projectInstance.interceptors.request.use((cfg) => {
-//   const token = localStorage.getItem("ACCESS_TOKEN") || localStorage.getItem("access");
-//   if (token) cfg.headers.Authorization = `Bearer ${token}`;
-//   return cfg;
-// });
-
 export const getSchedulingSetup = (project_id) =>
   projectInstance.get("/v2/scheduling/setup/", {
     params: { project_id }, // -> ?project_id=36
   });
-
-
-
-
-
-
-
-
-
-
-//   /* ========= GUARD: STAFF & ATTENDANCE (v2) ========= */
-
-// // 1) List STAFF for a project (search optional)
-// // GET /v2/staff/?project_id=36[&q=raj]
-// export const getStaffByProject = (projectId, q = "") =>
-//   axiosInstance.get("/v2/staff/", {
-//     params: { project_id: projectId, q },
-//     headers: { "Content-Type": "application/json" },
-//   });
-
-// // 2) Onboard a STAFF (face template created server-side)
-// // POST /v2/staffs/onboard/  (multipart/form-data)
-// export const onboardStaff = ({
-//   project_id,
-//   first_name,
-//   last_name = "",
-//   phone_number,
-//   adharcard_nummber = "",
-//   photo, // File/Blob
-// }) => {
-//   const fd = new FormData();
-//   fd.append("project_id", project_id);
-//   fd.append("first_name", first_name);
-//   if (last_name) fd.append("last_name", last_name);
-//   fd.append("phone_number", phone_number);
-//   if (adharcard_nummber) fd.append("adharcard_nummber", adharcard_nummber);
-//   fd.append("photo", photo);
-//   return axiosInstance.post("/v2/staffs/onboard/", fd, {
-//     headers: { "Content-Type": "multipart/form-data" },
-//   });
-// };
-
-// // 3) Mark attendance (auto IN/OUT unless force_action provided)
-// // POST /v2/attendance/mark/  (multipart/form-data)
-// export const markAttendance = ({
-//   user_id,
-//   project_id,
-//   photo,                // File/Blob
-//   lat = null,
-//   lon = null,
-//   force_action = null,  // "IN" | "OUT" | null
-// }) => {
-//   const fd = new FormData();
-//   fd.append("user_id", user_id);
-//   fd.append("project_id", project_id);
-//   fd.append("photo", photo);
-//   if (lat != null && lon != null) {
-//     fd.append("lat", lat);
-//     fd.append("lon", lon);
-//   }
-//   if (force_action) fd.append("force_action", force_action);
-//   return axiosInstance.post("/v2/attendance/mark/", fd, {
-//     headers: { "Content-Type": "multipart/form-data" },
-//   });
-// };
-
-// // 4) List attendance for a user (by day or range)
-// // GET /v2/attendance/?user_id=&project_id=&date=YYYY-MM-DD
-// // or  /v2/attendance/?user_id=&project_id=&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
-// export const listAttendanceByUser = ({
-//   user_id,
-//   project_id,
-//   date,        // optional
-//   start_date,  // optional (use with end_date)
-//   end_date,    // optional
-// }) =>
-//   axiosInstance.get("/v2/attendance/", {
-//     params: { user_id, project_id, date, start_date, end_date },
-//     headers: { "Content-Type": "application/json" },
-//   });
 
 
 
@@ -1318,26 +1209,6 @@ export const onboardStaff = ({
   return axiosInstance.post("/v2/staffs/onboard/", fd);
 };
 
-// export const onboardStaff = ({
-//   project_id,
-//   first_name,
-//   last_name = "",
-//   phone_number,
-//   adharcard_nummber = "",   // keep backend’s exact field name
-//   photo,                    // File/Blob
-// }) => {
-//   const fd = new FormData();
-//   fd.append("project_id", project_id);
-//   fd.append("first_name", first_name);
-//   if (last_name) fd.append("last_name", last_name);
-//   fd.append("phone_number", phone_number);
-//   if (adharcard_nummber) fd.append("adharcard_nummber", adharcard_nummber);
-//   fd.append("photo", photo);
-//   return axiosInstance.post("/v2/staffs/onboard/", fd, {
-//     headers: { "Content-Type": "multipart/form-data" },
-//   });
-// };
-
 // 3) POST /v2/attendance/mark/  (multipart)
 export const markAttendance = ({
   user_id,
@@ -1372,30 +1243,6 @@ export const listAttendanceByUser = ({ user_id, project_id, date, start_date, en
 
 
 
-
-  // ---- ANALYTICS: Snag stats ----
-// GET https://konstruct.world/checklists/stats/snags/?project_id=...
-// export const getSnagStats = (project_id, extraParams = {}) =>
-//   projectInstance.get("/checklists/stats/snags/", {
-//     params: { project_id, ...extraParams }, // accepts optional phase_id, stage_id, date range, etc.
-//   });
-
-// // Small helper so both Header and pages resolve project id the same way
-// export const resolveActiveProjectId = () => {
-//   try {
-//     const qp = new URLSearchParams(window.location.search).get("project_id");
-//     if (qp) return Number(qp);
-//   } catch {}
-//   const ls =
-//     localStorage.getItem("ACTIVE_PROJECT_ID") ||
-//     localStorage.getItem("PROJECT_ID");
-//   return Number(ls) || null; // no hardcoded fallback
-// };
-
-
-// ---- ANALYTICS: Snag stats (Checklist service) ----
-// If NEWchecklistInstance baseURL is the domain root, keep the leading "/checklists" below.
-// If its baseURL already includes "/checklists", change the path to just "/stats/snags/".
 
 export const getSnagStats = (project_id, extraParams = {}) =>
   NEWchecklistInstance.get("/stats/snags/", {
@@ -1781,52 +1628,6 @@ export const exportMIRPdf = async (mirId, includeAttachments = true) => {
   downloadBlob(res.data, filename);
   return true;
 };
-
-// export const exportMIRPdf = async (mirId) => {
-//   const token =
-//     localStorage.getItem("ACCESS_TOKEN") ||
-//     localStorage.getItem("access") ||
-//     localStorage.getItem("accessToken") ||
-//     "";
-
-//   const root = __getApiRoot();
-
-//   // ✅ try multiple possible routes (because baseURL can be /users or /api)
-//   const urls = [
-//     `${root}/users/mir/${mirId}/export-pdf/`,
-//     `${root}/api/mir/${mirId}/export-pdf/`,
-//     `/mir/${mirId}/export-pdf/`,
-
-//     // (optional fallback if someone used underscore in backend)
-//     `${root}/users/mir/${mirId}/export_pdf/`,
-//     `${root}/api/mir/${mirId}/export_pdf/`,
-//     `/mir/${mirId}/export_pdf/`,
-//   ];
-
-//   const res = await __getBlobWithFallback(axiosInstance, urls, {
-//     responseType: "blob",
-//     headers: token ? { Authorization: `Bearer ${token}`, Accept: "application/pdf" } : { Accept: "application/pdf" },
-//   });
-
-//   // ✅ If backend returns JSON error inside blob
-//   const contentType = res.headers?.["content-type"] || "";
-//   if (contentType.includes("application/json")) {
-//     const text = await res.data.text();
-//     let msg = "MIR PDF export failed";
-//     try {
-//       const j = JSON.parse(text);
-//       msg = j?.detail || j?.message || msg;
-//     } catch {}
-//     throw new Error(msg);
-//   }
-
-//   const dispo = res.headers?.["content-disposition"];
-//   const filename = filenameFromDisposition(dispo) || `MIR_${mirId}.pdf`;
-
-//   downloadBlob(res.data, filename);
-//   return true;
-// };
-
 
 
 
@@ -2437,132 +2238,6 @@ export const exportFormResponsePdf = async (responseId, { mode = "grid" } = {}) 
 };
 
 
-// ✅ FORMS: Export Response PDF (blob) with route fallbacks
-// export const exportFormResponsePdf = async (responseId, params = {}) => {
-//   const root = __getApiRoot();
-//   const token = __pickToken();
-
-//   // ✅ first try RELATIVE (because axiosInstance baseURL likely already /users)
-//   const urls = [
-//     `/forms/responses/${responseId}/export-pdf/`,
-//     `/forms/responses/${responseId}/export_pdf/`,     // just in case backend uses underscore
-//     `${root}/users/forms/responses/${responseId}/export-pdf/`,
-//     `${root}/api/forms/responses/${responseId}/export-pdf/`,
-//   ];
-
-//   let lastErr = null;
-
-//   for (const url of urls) {
-//     try {
-//       const res = await axiosInstance.get(url, {
-//         params,                 // { mode: "grid" } etc
-//         responseType: "blob",   // ✅ MUST
-//         headers: {
-//           ...(token ? { Authorization: `Bearer ${token}` } : {}),
-//           Accept: "application/pdf",
-//         },
-//       });
-
-//       // ✅ If backend returns JSON error inside blob
-//       const contentType = res.headers?.["content-type"] || "";
-//       if (contentType.includes("application/json")) {
-//         const text = await res.data.text();
-//         let msg = "Export failed";
-//         try {
-//           const j = JSON.parse(text);
-//           msg = j?.detail || j?.message || msg;
-//         } catch {}
-//         throw new Error(msg);
-//       }
-
-//       const dispo = res.headers?.["content-disposition"];
-//       const filename =
-//         filenameFromDisposition(dispo) || `form_response_${responseId}.pdf`;
-
-//       downloadBlob(res.data, filename);
-//       return true;
-//     } catch (err) {
-//       lastErr = err;
-
-//       const status = err?.response?.status;
-//       // fallback only if route not found
-//       if (status && status !== 404) throw err;
-//       if (!err?.response) throw err; // network error -> stop
-//     }
-//   }
-
-//   throw lastErr;
-// };
-
-
-// // --- ADD THIS IN api.js ---
-
-// import axios from "axios";
-
-// const CHECKLIST_BASE_URL = "https://konstruct.world/checklists";
-
-// // small axios client for checklist service
-// const checklistClient = axios.create({
-//   baseURL: CHECKLIST_BASE_URL,
-// });
-
-// // attach token automatically
-// checklistClient.interceptors.request.use((config) => {
-//   const token =
-//     localStorage.getItem("accessToken") ||
-//     localStorage.getItem("ACCESS_TOKEN") ||
-//     localStorage.getItem("token");
-
-//   if (token) config.headers.Authorization = `Bearer ${token}`;
-//   config.headers.Accept = "application/json";
-//   return config;
-// });
-
-// // helpers for download
-// // const filenameFromDisposition = (dispo) => {
-// //   try {
-// //     if (!dispo) return null;
-// //     const m = String(dispo).match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i);
-// //     if (!m || !m[1]) return null;
-// //     return decodeURIComponent(m[1]);
-// //   } catch {
-// //     return null;
-// //   }
-// // };
-
-// // const downloadBlob = (blob, filename) => {
-// //   const url = window.URL.createObjectURL(blob);
-// //   const a = document.createElement("a");
-// //   a.href = url;
-// //   a.download = filename || "report.xlsx";
-// //   document.body.appendChild(a);
-// //   a.click();
-// //   a.remove();
-// //   window.URL.revokeObjectURL(url);
-// // };
-
-// // ✅ JSON response (optional use)
-// export const getUnitChecklistReport = (params = {}) => {
-//   return checklistClient.get("/api/unit-checklist-report/", { params });
-// };
-
-// // ✅ Excel download (this is what you need)
-// export const exportUnitChecklistReportExcel = async (params = {}) => {
-//   const res = await checklistClient.get("/api/unit-checklist-report/", {
-//     params: { ...params, export: true },
-//     responseType: "blob",
-//   });
-
-//   const dispo = res.headers?.["content-disposition"];
-//   const name =
-//     filenameFromDisposition(dispo) ||
-//     `unit_checklist_report_${new Date().toISOString().slice(0, 10)}.xlsx`;
-
-//   downloadBlob(res.data, name);
-//   return true;
-// };
-
-
 
 const API_BASE = "https://konstruct.world/checklists";
 
@@ -2601,8 +2276,381 @@ export const listProjectSchedules = (projectId) => {
 };
 
 
-// export const getSchedulingSetup = (projectId, params = {}) => {
-//   return NEWchecklistInstance.get("/scheduling/setup/", {
-//     params: { project_id: projectId, ...params },
+
+
+
+
+
+
+
+
+
+/* ===================== SAFETY (Sessions + Quiz) ===================== */
+
+// ✅ LIST sessions
+// GET https://konstruct.world/users/safety/sessions/?project_id=126&mode=SELF_PACED&status=PUBLISHED
+export const listSafetySessions = (params = {}) =>
+  axiosInstance.get("safety/sessions/", {
+    params,
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ GET single session (detail: includes assets/photos + counts)
+export const getSafetySessionById = (sessionId) =>
+  axiosInstance.get(`safety/sessions/${sessionId}/`, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ CREATE session (manager)
+// body: { mode,title,description,location,scheduled_at,due_at,acknowledgement_text, project_ids:[...], assignee_user_ids:[...] }
+export const createSafetySession = (payload) =>
+  axiosInstance.post("safety/sessions/", payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ UPDATE session (manager)
+export const updateSafetySession = (sessionId, payload) =>
+  axiosInstance.patch(`safety/sessions/${sessionId}/`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ DELETE session (manager)
+export const deleteSafetySession = (sessionId) =>
+  axiosInstance.delete(`safety/sessions/${sessionId}/`, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ PUBLISH (manager)  POST /publish/
+export const publishSafetySession = (sessionId) =>
+  axiosInstance.post(`safety/sessions/${sessionId}/publish/`, null, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ ARCHIVE (manager)  POST /archive/
+export const archiveSafetySession = (sessionId) =>
+  axiosInstance.post(`safety/sessions/${sessionId}/archive/`, null, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ ASSIGN users (manager)
+// body: { user_ids: [1,2,3] }
+export const assignSafetySessionUsers = (sessionId, user_ids = []) =>
+  axiosInstance.post(
+    `safety/sessions/${sessionId}/assign/`,
+    { user_ids },
+    { headers: { "Content-Type": "application/json" } }
+  );
+
+// ✅ UPLOAD ASSET (manager) multipart
+// asset_type: VIDEO | PPT | PDF | OTHER
+export const uploadSafetySessionAsset = (sessionId, { asset_type, title = "", file }) => {
+  const fd = new FormData();
+  fd.append("asset_type", asset_type);
+  if (title) fd.append("title", title);
+  if (file) {
+    const filename = typeof file?.name === "string" ? file.name : "asset";
+    fd.append("file", file, filename);
+  }
+  // ⚠️ don't set Content-Type; axios/browser sets boundary
+  return axiosInstance.post(`safety/sessions/${sessionId}/assets/`, fd);
+};
+
+// ✅ UPLOAD PHOTO (manager, IN_PERSON only) multipart
+export const uploadSafetySessionPhoto = (sessionId, { image, caption = "" }) => {
+  const fd = new FormData();
+  if (image) {
+    const filename = typeof image?.name === "string" ? image.name : "photo.jpg";
+    fd.append("image", image, filename);
+  }
+  if (caption) fd.append("caption", caption);
+  return axiosInstance.post(`safety/sessions/${sessionId}/photos/`, fd);
+};
+
+// ✅ UPDATE ATTENDANCE (manager, IN_PERSON only)
+// body: { items: [{ user_id, status, note? }, ...] }
+export const updateSafetySessionAttendance = (sessionId, items = []) =>
+  axiosInstance.patch(
+    `safety/sessions/${sessionId}/attendance/`,
+    { items },
+    { headers: { "Content-Type": "application/json" } }
+  );
+
+// ✅ REPORT (manager)
+export const getSafetySessionReport = (sessionId) =>
+  axiosInstance.get(`safety/sessions/${sessionId}/report/`, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ---------------- USER ACTIONS ----------------
+
+// ✅ MARK VIEWED / COMPLETED (user + manager if can view/manage)
+// body optional: { complete:true/false, acknowledged:true/false, acknowledgement_text:"..." }
+export const markSafetySessionViewed = (sessionId, payload = {}) =>
+  axiosInstance.post(`safety/sessions/${sessionId}/mark_viewed/`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ---------------- QUIZ (USER) ----------------
+
+// ✅ GET quiz (public - no correct answers)
+export const getSafetySessionQuiz = (sessionId) =>
+  axiosInstance.get(`safety/sessions/${sessionId}/quiz/`, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ START quiz attempt -> returns submission
+export const startSafetyQuizAttempt = (sessionId) =>
+  axiosInstance.post(`safety/sessions/${sessionId}/quiz_start/`, null, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ SUBMIT answers (submission endpoint)
+// body: { answers: [{question_id, selected_option_ids:[...]}, ...] }
+export const submitSafetyQuiz = (submissionId, payload) =>
+  axiosInstance.post(`safety/quiz-submissions/${submissionId}/submit/`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ---------------- QUIZ (MANAGER) ----------------
+
+// ✅ QUIZ SETUP (create/update)
+export const setupSafetyQuiz = (sessionId, payload = {}) =>
+  axiosInstance.post(`safety/sessions/${sessionId}/quiz_setup/`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ ADD QUESTION
+export const addSafetyQuizQuestion = (sessionId, payload) =>
+  axiosInstance.post(`safety/sessions/${sessionId}/quiz_add_question/`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ ADD OPTION (payload must include question_id)
+export const addSafetyQuizOption = (sessionId, payload) =>
+  axiosInstance.post(`safety/sessions/${sessionId}/quiz_add_option/`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ✅ ADMIN QUIZ VIEW (includes is_correct)
+export const getSafetyQuizAdmin = (sessionId) =>
+  axiosInstance.get(`safety/sessions/${sessionId}/quiz_admin/`, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// (optional) read submission detail
+export const getSafetyQuizSubmissionById = (submissionId) =>
+  axiosInstance.get(`safety/quiz-submissions/${submissionId}/`, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+
+  export const bulkUploadSafetyQuizQuestions = (sessionId, payload) => {
+  return axiosInstance.post(`/safety/sessions/${sessionId}/quiz_bulk_upload/`, payload);
+};
+
+
+
+// ✅ IN_PERSON leader roster
+export const getSafetySessionInPersonRoster = (sessionId) =>
+  axiosInstance.get(`/safety/sessions/${sessionId}/in_person_roster/`);
+
+// ✅ Leader marks attendance
+export const leaderMarkSafetySessionAttendance = (sessionId, items) =>
+  axiosInstance.patch(`/safety/sessions/${sessionId}/leader_attendance/`, { items });
+
+// ✅ Leader submit report (locks leader edits)
+export const leaderSubmitSafetySessionReport = (sessionId) =>
+  axiosInstance.post(`/safety/sessions/${sessionId}/leader_submit_report/`);
+
+
+
+export const leaderUploadSafetySessionPhoto = (sessionId, formData) =>
+  axiosInstance.post(`/safety/sessions/${sessionId}/leader_photos/`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+
+  export const leaderUpdateSafetySessionTopics = (sessionId, topics_discussed) =>
+  axiosInstance.patch(`/safety/sessions/${sessionId}/leader_topics/`, { topics_discussed });
+
+
+
+
+
+  export const getMiniDashboardForProject = (projectId) => {
+  // Checklist service endpoint (same domain)
+  return NEWchecklistInstance.get(`/stats/mini-dashboard/?project_id=${projectId}`);
+};
+
+
+export const getProjectStageInfo = (stageId) => {
+  // Project service endpoint
+  return projectInstance.get(`/stages/${stageId}/info/`);
+};
+
+
+
+
+
+
+
+
+
+/* ===================== FORMS: BASKETS + MANAGER DECISION ===================== */
+
+// ---- Manager decision (assignment visibility mode)
+// POST /forms/manager/decide/
+export const managerDecideFormAssignments = (payload) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "post",
+    urlList: __formsUrlCandidates("/manager/decide/"),
+    data: payload,
+  });
+
+// ---- Baskets (CRUD) ----
+// GET /forms/baskets/?project_id=&stage_id=
+export const listFormBaskets = (params = {}) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "get",
+    urlList: __formsUrlCandidates("/baskets/"),
+    params,
+  });
+
+// POST /forms/baskets/
+export const createFormBasket = (payload) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "post",
+    urlList: __formsUrlCandidates("/baskets/"),
+    data: payload,
+  });
+
+// GET /forms/baskets/:id/
+export const getFormBasketById = (basketId) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "get",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/`),
+  });
+
+// PATCH /forms/baskets/:id/
+export const updateFormBasket = (basketId, payload) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "patch",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/`),
+    data: payload,
+  });
+
+// DELETE /forms/baskets/:id/
+export const deleteFormBasket = (basketId) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "delete",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/`),
+  });
+
+// ---- Basket availability for user ----
+// GET /forms/baskets/available/?project_id=4
+export const getAvailableFormBaskets = (projectId, extraParams = {}) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "get",
+    urlList: __formsUrlCandidates("/baskets/available/"),
+    params: { project_id: projectId, ...extraParams },
+  });
+
+// ---- Basket items (assignments inside basket) ----
+// GET /forms/baskets/:id/items/
+export const listFormBasketItems = (basketId) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "get",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/set-items/`),
+  });
+
+// POST /forms/baskets/:id/items/   payload example: { assignment_ids:[1,2,3] }
+export const addFormBasketItems = (basketId, payload) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "post",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/set-items/`),
+    data: payload,
+  });
+
+// ---- Basket targets (users/groups mapped to basket) ----
+// GET /forms/baskets/:id/targets/
+export const getFormBasketTargets = (basketId) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "get",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/set-targets/`),
+  });
+
+// POST /forms/baskets/:id/targets/  payload: { user_ids:[...], group_ids:[...] }
+export const setFormBasketTargets = (basketId, payload) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "post",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/set-targets/`),
+    data: payload,
+  });
+
+// ---- Basket flow (tree) ----
+// GET /forms/baskets/:id/flow/
+export const getFormBasketFlow = (basketId) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "get",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/set-flow/`),
+  });
+
+// POST /forms/baskets/:id/flow/   payload: { nodes:[...], edges:[...] }
+export const saveFormBasketFlow = (basketId, payload) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "post",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/set-flow/`),
+    data: payload,
+  });
+
+// ---- Start response from basket (auto planned flow) ----
+// POST /forms/baskets/:id/start/
+// export const startFormFromBasket = (basketId, payload) =>
+//   __jsonWithFallback(axiosInstance, {
+//     method: "post",
+//     urlList: __formsUrlCandidates(`/baskets/${basketId}/start/`),
+//     data: payload,
 //   });
-// };
+
+
+
+  /* ===== FIXED endpoints as per your backend ===== */
+
+// GET /forms/baskets/:id/  (single source of truth for items/targets/flow)
+export const getFormBasketDetail = (basketId) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "get",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/`),
+  });
+
+// POST /forms/baskets/:id/set-items/   { assignment_ids:[...], mark_decision_basket:true }
+export const setFormBasketItems = (basketId, payload) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "post",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/set-items/`),
+    data: payload,
+  });
+
+// POST /forms/baskets/:id/set-targets/   { targets:[{target_kind:"USER",user_id:..},{target_kind:"ROLE",role_code:"CHECKER"}] }
+export const setFormBasketTargetsV2 = (basketId, payload) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "post",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/set-targets/`),
+    data: payload,
+  });
+
+// POST /forms/baskets/:id/set-flow/   { flow_mode:"PLANNED", planned_steps:[[userId],[userId2]] }
+export const setFormBasketFlowV2 = (basketId, payload) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "post",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/set-flow/`),
+    data: payload,
+  });
+
+// POST /forms/baskets/:id/start-form/
+export const startFormFromBasket = (basketId, payload) =>
+  __jsonWithFallback(axiosInstance, {
+    method: "post",
+    urlList: __formsUrlCandidates(`/baskets/${basketId}/start-form/`),
+    data: payload,
+  });

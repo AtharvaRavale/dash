@@ -269,8 +269,11 @@ function SideBarSetup({ overrideNavItems }) {
       { name: "Category management", path: "/category-sidebar" },
       { name: "Users Management", path: "/UsersManagement" },
       { name: "Scheduling", path: "/scheduling" },
+      // { name: "Forms Setup", path: "/project-forms/setup" },
       { name: "Attendance", path: "/attendance/project" },
+
       { name: "Project Forms", path: "/project-forms" }, // ✅ use computed path
+      { name: "Safety", path: "/safety/sessions" },
     ];
   } else if (rolee === "super admin") {
     navItems = [
